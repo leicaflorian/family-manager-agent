@@ -2,10 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"runtime"
+	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -23,10 +26,16 @@ const idleTime = 10 * time.Minute
 // The header that tells an agent from another program on the same port.
 const agentHeader = "X-Family-Manager-Agent"
 
+// How many different calls refused as forbidden the log keeps: a page that keeps asking does not fill it.
+const refusedKept = 20
+
 type Server struct {
 	session *Session
 	origins *Origins
 	last    atomic.Int64
+	// the calls refused as forbidden already written in the log
+	refusedMu sync.Mutex
+	refused   map[string]bool
 }
 
 func NewServer(session *Session, origins *Origins) *Server {
@@ -76,6 +85,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 
 		origin := r.Header.Get("Origin")
 		if r.Host != Address || !validOrigin(origin) {
+			s.noteRefused(r)
 			refuse(w, http.StatusForbidden, "forbidden")
 			return
 		}
@@ -108,6 +118,40 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			refuse(w, http.StatusForbidden, "origin_pending")
 		}
 	})
+}
+
+// noteRefused writes in the log a call refused as forbidden, with what it carried: the page takes
+// such a refusal for an agent that does not answer, and nothing else tells why. The names of the
+// headers are there to show a program between the browser and the agent. Each different call is
+// written once.
+func (s *Server) noteRefused(r *http.Request) {
+	names := make([]string, 0, len(r.Header))
+	for name := range r.Header {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	call := fmt.Sprintf("%s %q, Host %q, Origin %s, from %q, headers %q", r.Method, clip(r.URL.Path, 100),
+		clip(r.Host, 100), clip(fmt.Sprintf("%q", r.Header.Values("Origin")), 200), clip(r.UserAgent(), 200),
+		clip(strings.Join(names, " "), 500))
+
+	s.refusedMu.Lock()
+	defer s.refusedMu.Unlock()
+	if s.refused[call] || len(s.refused) >= refusedKept {
+		return
+	}
+	if s.refused == nil {
+		s.refused = map[string]bool{}
+	}
+	s.refused[call] = true
+	logf("refused: %s", call)
+}
+
+// clip keeps the start of a text that came with a call.
+func clip(text string, most int) string {
+	if len(text) > most {
+		return text[:most] + "..."
+	}
+	return text
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
