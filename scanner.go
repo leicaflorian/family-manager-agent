@@ -92,8 +92,11 @@ type Session struct {
 	next   int
 }
 
+// sessionFolder is how the temporary folder of the sides begins, in the temporary folder of the user.
+const sessionFolder = "FamilyManagerAgent-"
+
 func NewSession(driver Driver) (*Session, error) {
-	dir, err := os.MkdirTemp("", "FamilyManagerAgent-")
+	dir, err := os.MkdirTemp("", sessionFolder)
 	if err != nil {
 		return nil, err
 	}

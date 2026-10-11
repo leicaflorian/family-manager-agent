@@ -22,7 +22,7 @@ Non conosce Family Manager: nessun indirizzo, nessuna chiave, nessun token. Il f
 I due zip sono nelle [release](https://github.com/leicaflorian/family-manager-agent/releases), e la pagina *Scansiona* li fa scaricare. I programmi non sono firmati, quindi la prima volta vanno accettati a mano.
 
 - **Mac**: aprire `FamilyManagerAgent-mac.zip`, spostare *Family Manager Agent* in *Applicazioni* e aprirlo. macOS lo rifiuta: *Impostazioni di Sistema → Privacy e sicurezza → Apri comunque*.
-- **Windows**: aprire `FamilyManagerAgent-windows.zip` e poi *Family Manager Agent*. Windows mostra "PC protetto": *Ulteriori informazioni → Esegui comunque*. Il programma si copia da solo in `%LOCALAPPDATA%\FamilyManagerAgent\` e lo dice in una finestra, *Installazione riuscita*: lo zip si può buttare. La finestra compare solo aprendo il programma scaricato, non quando l'agente lo avvia la pagina.
+- **Windows**: aprire `FamilyManagerAgent-windows.zip` e poi *Family Manager Agent*. Windows mostra "PC protetto": *Ulteriori informazioni → Esegui comunque*. Il programma si copia da solo in `%LOCALAPPDATA%\FamilyManagerAgent\` e lo dice in una finestra, *Installazione riuscita*: lo zip si può buttare. La finestra compare solo aprendo il programma scaricato, non quando l'agente lo avvia la pagina. Se un agente è già aperto, il programma scaricato lo dice e chiede se chiuderlo: con *Sì* lo chiude di forza (una scansione in corso si interrompe) e si installa al suo posto.
 
 ## Aggiornarsi da solo
 
@@ -119,7 +119,7 @@ Su Windows, senza la pagina: `test-windows.cmd`, copiato sul PC accanto al progr
 | `scanner_darwin.go`, `scanner_darwin.m`, `agent_darwin.h` | Lo scanner sul Mac (`ImageCaptureCore`) |
 | `scanner_windows.go` | Lo scanner su Windows (WIA, con `go-ole`): scritto senza poterlo provare dal Mac |
 | `dialog_*.go`, `dialog_darwin.m` | La domanda e i messaggi |
-| `install_windows.go`, `install_darwin.go` | Su Windows la copia in `%LOCALAPPDATA%\FamilyManagerAgent\`, il collegamento nel registro e la finestra che conferma l'installazione |
+| `install_windows.go`, `install_darwin.go` | Su Windows la copia in `%LOCALAPPDATA%\FamilyManagerAgent\`, il collegamento nel registro, la finestra che conferma l'installazione e la chiusura di un agente già aperto |
 | `icon.go`, `icon.png` | L'icona accanto all'orologio di Windows, e il disegno della barra dei menu del Mac |
 | `mac-icon.swift` | L'icona dell'app del Mac, nella forma di macOS |
 | `probe.go` | La prova: cosa il sistema vede dello scanner |
@@ -132,7 +132,7 @@ Su Windows, senza la pagina: `test-windows.cmd`, copiato sul PC accanto al progr
 ## Cose ancora da provare
 
 - La scansione vera dalla pagina, sul Mac e su Windows.
-- Tutta la parte di Windows: lo scanner (WIA), l'icona del programma e quella accanto all'orologio, la finestra *Installazione riuscita*.
+- Tutta la parte di Windows: lo scanner (WIA), l'icona del programma e quella accanto all'orologio, la finestra *Installazione riuscita*, e la chiusura dell'agente già aperto quando si apre il programma scaricato.
 - Safari: la pagina è in `https` e l'agente in `http` su `127.0.0.1`.
 - Il riavvio dell'agente dopo un aggiornamento chiesto con *Cerca aggiornamenti*, con la finestra di *Informazioni* aperta.
 - L'aggiornamento con l'app dentro *Applicazioni*: è stato provato con l'app in un'altra cartella, e macOS può impedire a un programma di modificare le app (*Privacy e sicurezza → Gestione app*). E l'aggiornamento su Windows.

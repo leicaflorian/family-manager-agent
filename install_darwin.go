@@ -7,3 +7,6 @@ func install() bool { return false }
 
 // tellInstalled has nothing to say here.
 func tellInstalled() {}
+
+// takeOver is never true here: macOS does not open a second copy of an app that is already open.
+func takeOver() bool { return false }

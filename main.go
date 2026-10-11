@@ -71,12 +71,16 @@ func main() {
 		return
 	}
 	var err error
-	if listener, err = net.Listen("tcp", Address); err != nil {
-		// an agent is already open (the page opened the link twice): this one has nothing to do,
-		// and leaves the log of the other alone
-		if otherAgent() {
+	listener, err = net.Listen("tcp", Address)
+	if err != nil && otherAgent() {
+		// an agent is already open. When the page opened the link twice this one has nothing to
+		// do, and leaves the log of the other alone; opened by hand it asks to take its place
+		if !takeOver() {
 			return
 		}
+		listener, err = net.Listen("tcp", Address)
+	}
+	if err != nil {
 		tell(appName, "La porta "+Port+" è usata da un altro programma: l'agente non può partire.\n\nChiudi quel programma e riapri l'agente.")
 		os.Exit(1)
 	}
