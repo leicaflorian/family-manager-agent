@@ -14,7 +14,14 @@ Per pubblicare, `./close-version.py X.Y.Z` chiude la versione (il numero lo sceg
 
 ## [Non rilasciato]
 
-Niente ancora.
+### Correzioni
+
+- **Su Windows l'agente lascia stare gli scanner di rete**, come sul Mac: guarda solo quelli attaccati al computer. Prima, a ogni domanda sullo stato e a ogni scansione, si collegava a tutti gli scanner che Windows elenca, uno dopo l'altro, finché ne trovava uno con il caricatore: su un PC con una stampante multifunzione sul Wi-Fi, che Windows elenca due volte e prima dello scanner, passava ogni volta da lì, la svegliava, e aspettava la sua risposta. È il motivo per cui Windows risultava lento sullo scanner. Scritto senza poterlo provare.
+- **Su Windows la facciata non arriva più ritagliata quando il driver non accetta i 200 punti**: l'agente chiedeva un'area fissa in punti, quella di un A4 a 200, anche quando il driver rifiutava la risoluzione e restava alla sua. Sul PC, l'11/10/2026, arrivavano così i due terzi centrali del foglio. Ora l'area è calcolata sulla risoluzione che il driver ha tenuto: il foglio arriva intero, a quella risoluzione. Scritto senza poterlo provare.
+
+### Novità
+
+- **Su Windows `agent.log` dice a che punto è una scansione**: ogni passo lascia una riga `scan:` (la richiesta, l'attesa del thread di WIA, lo scanner scelto e in quanto tempo si è collegato, le impostazioni che il driver ha tenuto (risoluzione e area comprese), come il caricatore tiene il foglio, ogni facciata con il suo tempo e la sua misura, la fine). Di un valore rifiutato dal driver (`WIA property … refused`) scrive anche il codice dell'errore, il valore che resta e quelli che il driver accetta. Prima, tra `POST /scan` e la prima facciata l'agente non scriveva niente: una scansione che non parte lasciava la pagina su *Scansione in corso…* e il log vuoto, come è successo l'11/10/2026 sul PC. L'ultima riga dice dove si è fermata. Scritto senza poterlo provare.
 
 ## [1.2.1] - 2026-10-11
 
