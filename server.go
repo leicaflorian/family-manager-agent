@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,10 @@ const idleTime = 10 * time.Minute
 // The header that tells an agent from another program on the same port.
 const agentHeader = "X-Family-Manager-Agent"
 
+// What the requests of the page that chooses the scanner carry (api=2), and the agent answers with.
+// A request without it is of the page of before, which gets what it always got.
+const API = 2
+
 // How many different calls refused as forbidden the log keeps: a page that keeps asking does not fill it.
 const refusedKept = 20
 
@@ -36,6 +41,9 @@ type Server struct {
 	// the calls refused as forbidden already written in the log
 	refusedMu sync.Mutex
 	refused   map[string]bool
+	// the scanners last listed: what GET /scanners answers during a scan
+	listMu sync.Mutex
+	list   []Scanner
 }
 
 func NewServer(session *Session, origins *Origins) *Server {
@@ -55,6 +63,7 @@ func (s *Server) Idle() bool {
 
 func (s *Server) Serve(listener net.Listener) error {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /scanners", s.scanners)
 	mux.HandleFunc("GET /status", s.status)
 	mux.HandleFunc("POST /scan", s.scan)
 	mux.HandleFunc("GET /pages", s.pages)
@@ -154,17 +163,76 @@ func clip(text string, most int) string {
 	return text
 }
 
-func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	scanner := ScannerReady
-	// during a scan the scanner is busy: it is there, and asking it would only wait
+// chooses is true for a request of the page that chooses the scanner.
+func chooses(r *http.Request) bool {
+	return r.URL.Query().Get("api") == strconv.Itoa(API)
+}
+
+func (s *Server) scanners(w http.ResponseWriter, r *http.Request) {
+	s.listMu.Lock()
+	defer s.listMu.Unlock()
+	// during a scan the scanner is busy, and on Windows the list would wait for it
 	if !s.session.Scanning() {
-		scanner = s.session.driver.Status()
+		s.list = s.session.driver.List()
 	}
-	answer(w, http.StatusOK, map[string]string{"version": Version, "os": runtime.GOOS, "scanner": scanner})
+	list := s.list
+	if list == nil {
+		list = []Scanner{}
+	}
+	answer(w, http.StatusOK, map[string]any{"scanners": list})
+}
+
+func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	body := map[string]any{"version": Version, "os": runtime.GOOS, "scanner": ScannerReady}
+	query := r.URL.Query()
+	scanner, source := query.Get("scanner"), query.Get("source")
+	if chooses(r) {
+		body["api"] = API
+		if source != "" && source != SourceFeeder && source != SourceFlatbed {
+			refuse(w, http.StatusBadRequest, "settings")
+			return
+		}
+	} else {
+		scanner, source = "", ""
+	}
+	switch {
+	case s.session.Scanning():
+		// during a scan the scanner is busy: it is there, and asking it would only wait
+	case chooses(r) && scanner == "":
+		// the page has not chosen a scanner yet: none is opened
+		body["scanner"] = ScannerOff
+	default:
+		state, has := s.session.driver.Status(scanner, source)
+		body["scanner"] = state
+		if has != nil && chooses(r) {
+			body["source"], body["sources"] = has.Source, has.Sources
+			body["resolutions"], body["colours"] = has.Resolutions, has.Colours
+		}
+	}
+	answer(w, http.StatusOK, body)
 }
 
 func (s *Server) scan(w http.ResponseWriter, r *http.Request) {
-	if !s.session.Start() {
+	settings := Before
+	if chooses(r) {
+		query := r.URL.Query()
+		resolution, _ := strconv.Atoi(query.Get("resolution"))
+		settings = Settings{Scanner: query.Get("scanner"), Source: query.Get("source"), Resolution: resolution, Colour: query.Get("colour")}
+		valid := settings.Scanner != "" && resolution > 0 &&
+			(settings.Source == SourceFeeder || settings.Source == SourceFlatbed) &&
+			(settings.Colour == ColourColour || settings.Colour == ColourGrey)
+		// what the scanner has is known only with the scanner open: of one that is off the scan says so
+		if valid && !s.session.Scanning() {
+			if _, has := s.session.driver.Status(settings.Scanner, settings.Source); has != nil {
+				valid = has.Has(settings)
+			}
+		}
+		if !valid {
+			refuse(w, http.StatusBadRequest, "settings")
+			return
+		}
+	}
+	if !s.session.Start(settings) {
 		refuse(w, http.StatusConflict, "scanning")
 		return
 	}

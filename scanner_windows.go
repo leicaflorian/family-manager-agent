@@ -21,6 +21,7 @@ import (
 
 // The properties of WIA used here, by their number.
 const (
+	wiaName         = "7"    // of a device in the list: the name Windows shows
 	wiaPnP          = "16"   // of a device in the list: how Windows reaches it
 	wiaSheetWidth   = "3076" // of the device: the widest sheet of the feeder, in thousandths of an inch
 	wiaSheetHeight  = "3077"
@@ -30,7 +31,7 @@ const (
 	wiaSelect       = "3088" // of the device: where to take the sheets from
 	wiaPages        = "3096" // of the device: how many sides for each request
 	wiaPageSize     = "3097" // the size of the sheet: 0 is A4
-	wiaIntent       = "6146" // of the item: 1 is colour
+	wiaIntent       = "6146" // of the item: 1 is colour, 2 is grey
 	wiaHorizontal   = "6147" // dots per inch
 	wiaVertical     = "6148"
 	wiaLeft         = "6149" // the area to scan, in dots
@@ -42,9 +43,11 @@ const (
 const (
 	wiaScanner    = 1 // DeviceInfo.Type of a scanner
 	wiaFeeder     = 1 // in the capabilities and in the choice: the feeder
+	wiaFlatbed    = 2 // in the capabilities and in the choice: the glass
 	wiaDuplex     = 4 // in the capabilities and in the choice: both sides
 	wiaFeedReady  = 1 // in the status: there are sheets in the feeder
 	wiaColour     = 1
+	wiaGrey       = 2
 	wiaFormatJPEG = "{B96B3CAE-0728-11D3-9D7B-0000F81EF32E}"
 	jpegQuality   = 85
 )
@@ -66,24 +69,30 @@ const (
 	slowWIA   = 2 * time.Second
 )
 
+// usual are the resolutions offered of a driver that takes any of a range, or does not say which.
+var usual = []int{75, 100, 150, 200, 300, 400, 600, 1200}
+
 // windowsDriver sends every call to WIA from one thread: the objects of WIA belong to the thread
 // that created them.
 type windowsDriver struct {
 	calls chan func()
 
-	// What WIA last said of the scanner. Asking it can take longer than the page waits for an
-	// answer (on 11/10/2026 the page gave up after its 12 seconds), so Status answers with this
-	// and has WIA asked again behind it.
-	mu     sync.Mutex
-	state  string
-	asked  time.Time     // when WIA last answered
-	asking bool          // a question to WIA is on its way
-	first  chan struct{} // closed at the first answer of WIA
-	once   sync.Once
+	// What WIA last said of the scanner asked. Asking it can take longer than the page waits for
+	// an answer (on 11/10/2026 the page gave up after its 12 seconds), so Status answers with
+	// this and has WIA asked again behind it.
+	mu       sync.Mutex
+	chosen   bool   // a page asked for a scanner
+	scanner  string // the one last asked, and set on what: "" is the page of before
+	source   string
+	state    string
+	has      *Capabilities
+	asked    time.Time     // when WIA last answered
+	asking   bool          // a question to WIA is on its way
+	answered chan struct{} // closed at the first answer of WIA about the scanner now asked
 }
 
 func newDriver() Driver {
-	driver := &windowsDriver{calls: make(chan func()), state: ScannerOff, first: make(chan struct{})}
+	driver := &windowsDriver{calls: make(chan func()), state: ScannerOff, answered: make(chan struct{})}
 	go func() {
 		runtime.LockOSThread()
 		if err := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED); err != nil {
@@ -116,44 +125,86 @@ func (d *windowsDriver) do(call func()) (err error) {
 	return err
 }
 
-// Status answers with what WIA last said, and has it asked again when that is old. It waits only
-// for the first answer, and not longer than openingTime: after that the scanner counts as off
-// until WIA says otherwise. The probe waits as long as it takes.
-func (d *windowsDriver) Status() string {
+// List says the scanners Windows lists, the ones of the network too, without connecting to any.
+func (d *windowsDriver) List() []Scanner {
+	list := []Scanner{}
+	err := d.do(func() {
+		devices(func(info *ole.IDispatch) bool {
+			if get(info, "Type").Val != wiaScanner {
+				return false
+			}
+			found := Scanner{ID: get(info, "DeviceID").ToString(), Name: words(info, wiaName), Connection: ConnectionUSB}
+			if found.Name == "" {
+				found.Name = found.ID
+			}
+			if onNetwork(info) {
+				found.Connection = ConnectionNetwork
+			}
+			list = append(list, found)
+			return false
+		})
+	})
+	if err != nil {
+		logf("scanners: %v", err)
+	}
+	return list
+}
+
+// Status answers with what WIA last said of the scanner asked, and has it asked again when that
+// is old. The page that chooses reads "opening" until WIA has answered about that scanner. The
+// page of before waits for the first answer, not longer than openingTime: after that the scanner
+// counts as off until WIA says otherwise. The probe waits as long as it takes.
+func (d *windowsDriver) Status(scanner, source string) (string, *Capabilities) {
 	d.mu.Lock()
+	if !d.chosen || scanner != d.scanner || source != d.source {
+		d.chosen, d.scanner, d.source = true, scanner, source
+		d.state, d.has, d.asked = ScannerOpening, nil, time.Time{}
+		d.answered = make(chan struct{})
+	}
 	if !d.asking && time.Since(d.asked) > statusAge {
 		d.asking = true
-		go d.refresh()
+		go d.refresh(scanner, source)
 	}
+	answered := d.answered
 	d.mu.Unlock()
 
-	if probing {
-		<-d.first
-	} else {
+	switch {
+	case probing:
+		<-answered
+	case scanner == "":
 		select {
-		case <-d.first:
+		case <-answered:
 		case <-time.After(openingTime):
 		}
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.state
+	if scanner != d.scanner || source != d.source {
+		// another page asked for another scanner in the meantime
+		return ScannerOff, nil
+	}
+	if scanner == "" {
+		if d.state == ScannerOpening {
+			return ScannerOff, nil
+		}
+		return d.state, nil
+	}
+	return d.state, d.has
 }
 
-// refresh asks WIA how the scanner is and keeps the answer for Status.
-func (d *windowsDriver) refresh() {
+// refresh asks WIA how the scanner asked is, connecting only to that one, and keeps the answer
+// for Status.
+func (d *windowsDriver) refresh(scanner, source string) {
 	started := time.Now()
 	status := ScannerOff
+	var has *Capabilities
 	err := d.do(func() {
-		device, _ := feederDevice()
+		device, _ := connect(scanner)
 		if device == nil {
 			return
 		}
 		defer device.Release()
-		status = ScannerEmpty
-		if number(device, wiaStatus)&wiaFeedReady != 0 {
-			status = ScannerReady
-		}
+		status, has = look(device, source)
 	})
 	if err != nil {
 		logf("status: %v", err)
@@ -163,12 +214,20 @@ func (d *windowsDriver) refresh() {
 		logf("status: WIA answered %q after %s", status, took.Round(100*time.Millisecond))
 	}
 	d.mu.Lock()
-	d.state, d.asked, d.asking = status, time.Now(), false
-	d.mu.Unlock()
-	d.once.Do(func() { close(d.first) })
+	defer d.mu.Unlock()
+	d.asking = false
+	if scanner != d.scanner || source != d.source {
+		return
+	}
+	d.state, d.has, d.asked = status, has, time.Now()
+	select {
+	case <-d.answered:
+	default:
+		close(d.answered)
+	}
 }
 
-func (d *windowsDriver) Scan(dir string, page func(path string)) *ScanError {
+func (d *windowsDriver) Scan(settings Settings, dir string, page func(path string)) *ScanError {
 	// the feeder is no longer as WIA said: the next Status has it asked again
 	defer func() {
 		d.mu.Lock()
@@ -184,7 +243,7 @@ func (d *windowsDriver) Scan(dir string, page func(path string)) *ScanError {
 		if waited := time.Since(asked); waited > slowWIA {
 			logf("scan: waited %s for the thread of WIA", waited.Round(100*time.Millisecond))
 		}
-		result = scan(dir, page)
+		result = scan(settings, dir, page)
 	})
 	if err != nil {
 		return scanFailure(err, 0)
@@ -192,9 +251,11 @@ func (d *windowsDriver) Scan(dir string, page func(path string)) *ScanError {
 	return result
 }
 
-func (d *windowsDriver) Describe() string {
+// Describe lists what Windows sees without connecting to any scanner, and connects to the one
+// asked to say every property it has.
+func (d *windowsDriver) Describe(scanner string) string {
 	var text strings.Builder
-	err := d.do(func() { describe(&text) })
+	err := d.do(func() { describe(&text, scanner) })
 	if err != nil {
 		fmt.Fprintf(&text, "\nWIA stopped: %v\n", err)
 	}
@@ -203,7 +264,8 @@ func (d *windowsDriver) Describe() string {
 
 func (d *windowsDriver) Close() {}
 
-func settle() {}
+// settle is for the probe on the Mac: here WIA answers when asked.
+func settle(wait time.Duration) {}
 
 // --- the calls to WIA: they panic with the error of WIA, caught by do ---
 
@@ -258,20 +320,129 @@ func number(object *ole.IDispatch, id string) int64 {
 	return 0
 }
 
-// set writes a property and says whether the driver took it: a scanner that does not have one, or
-// refuses a value, is not a reason to stop.
-func set(object *ole.IDispatch, id string, value int32) bool {
+// put writes a property, and when the driver does not take the value leaves in the log why, the
+// value that stays and the ones it takes.
+func put(object *ole.IDispatch, id string, value int32) error {
 	found := property(object, id)
 	if found == nil {
-		return false
+		return fmt.Errorf("the scanner has no property %s", id)
 	}
 	defer found.Release()
 	if _, err := oleutil.PutProperty(found, "Value", value); err != nil {
 		logf("WIA property %s = %d refused: %v (0x%08X); it is %v, read only %v, takes %s",
 			id, value, err, codeOf(err), read(found, "Value"), read(found, "IsReadOnly"), allowed(found))
-		return false
+		return fmt.Errorf("%v (0x%08X)", err, codeOf(err))
 	}
-	return true
+	return nil
+}
+
+// set writes a property and says whether the driver took it: a scanner that does not have one, or
+// refuses a value, is not a reason to stop.
+func set(object *ole.IDispatch, id string, value int32) bool {
+	return put(object, id, value) == nil
+}
+
+// whole is a number read from WIA, whatever its type.
+func whole(value any) (int, bool) {
+	switch number := value.(type) {
+	case int32:
+		return int(number), true
+	case int64:
+		return int(number), true
+	case int:
+		return number, true
+	case uint32:
+		return int(number), true
+	case int16:
+		return int(number), true
+	case uint16:
+		return int(number), true
+	}
+	return 0, false
+}
+
+// resolutions says the dots per inch the driver takes, read from the first item of the scanner:
+// its list, or the usual ones that fit its range. A driver that does not say gets the usual ones,
+// and refuses at the scan the one it does not have.
+func resolutions(device *ole.IDispatch) []int {
+	list := []int{}
+	items := get(device, "Items").ToIDispatch()
+	defer items.Release()
+	if get(items, "Count").Val < 1 {
+		return list
+	}
+	item := get(items, "Item", int32(1)).ToIDispatch()
+	defer item.Release()
+	found := property(item, wiaHorizontal)
+	if found == nil {
+		return list
+	}
+	defer found.Release()
+
+	switch fmt.Sprint(read(found, "SubType")) {
+	case "1": // a range
+		least, _ := whole(read(found, "SubTypeMin"))
+		most, _ := whole(read(found, "SubTypeMax"))
+		step, _ := whole(read(found, "SubTypeStep"))
+		if step < 1 {
+			step = 1
+		}
+		for _, dots := range usual {
+			if dots >= least && dots <= most && (dots-least)%step == 0 {
+				list = append(list, dots)
+			}
+		}
+		return list
+	case "2", "3": // a list, or flags
+		values, err := oleutil.GetProperty(found, "SubTypeValues")
+		if err != nil || values.VT != ole.VT_DISPATCH || values.Val == 0 {
+			break
+		}
+		vector := values.ToIDispatch()
+		defer vector.Release()
+		count, _ := whole(read(vector, "Count"))
+		for index := 1; index <= count; index++ {
+			entry, err := oleutil.GetProperty(vector, "Item", int32(index))
+			if err != nil {
+				break
+			}
+			if dots, ok := whole(entry.Value()); ok {
+				list = append(list, dots)
+			}
+		}
+		if len(list) > 0 {
+			return list
+		}
+	}
+	return append(list, usual...)
+}
+
+// look says how the scanner connected is and what it has: where it takes the sheets from, set on
+// the source asked when it has it, and the resolutions.
+func look(device *ole.IDispatch, source string) (string, *Capabilities) {
+	capabilities := number(device, wiaCapabilities)
+	has := &Capabilities{Sources: []string{}, Colours: []string{ColourColour, ColourGrey}}
+	if capabilities&wiaFeeder != 0 {
+		has.Sources = append(has.Sources, SourceFeeder)
+	}
+	// a scanner that says nothing of a feeder has a glass
+	if capabilities&wiaFlatbed != 0 || capabilities&wiaFeeder == 0 {
+		has.Sources = append(has.Sources, SourceFlatbed)
+	}
+	has.Source = has.Sources[0]
+	for _, there := range has.Sources {
+		if there == source {
+			has.Source = source
+		}
+	}
+	has.Resolutions = resolutions(device)
+
+	// the glass does not say whether a sheet is on it
+	state := ScannerReady
+	if has.Source == SourceFeeder && number(device, wiaStatus)&wiaFeedReady == 0 {
+		state = ScannerEmpty
+	}
+	return state, has
 }
 
 // allowed says which values the driver takes for a property: for the log of a value refused.
@@ -344,8 +515,46 @@ func words(object *ole.IDispatch, id string) string {
 	return fmt.Sprint(read(found, "Value"))
 }
 
-// feederDevice connects to the first scanner with a feeder, or is nil. The caller releases it.
-// The second answer is the id Windows gives that scanner, for the log of a scan.
+// The last scanner asked by its id that did not connect, and why: written in the log once, not
+// at every question of the page.
+var unreached string
+
+// connect connects to the scanner asked by its id, on the cable or on the network, and to no
+// other; with "", the page of before, to the first on the cable with a feeder. It is nil when the
+// scanner is not there or does not answer. The caller releases it. The second answer is the id
+// Windows gives that scanner, for the log of a scan.
+func connect(scanner string) (*ole.IDispatch, string) {
+	if scanner == "" {
+		return feederDevice()
+	}
+	var found *ole.IDispatch
+	failure := scanner + ": not in the list of Windows"
+	devices(func(info *ole.IDispatch) bool {
+		if get(info, "Type").Val != wiaScanner || get(info, "DeviceID").ToString() != scanner {
+			return false
+		}
+		started := time.Now()
+		connected, err := call(info, "Connect")
+		if took := time.Since(started); took > slowWIA {
+			logf("WIA: connecting to %s took %s", scanner, took.Round(100*time.Millisecond))
+		}
+		if err != nil {
+			failure = fmt.Sprintf("%s: %v (0x%08X)", scanner, err, codeOf(err))
+			return true
+		}
+		found, failure = connected.ToIDispatch(), ""
+		return true
+	})
+	if failure != "" && failure != unreached {
+		logf("WIA: no connection to %s", failure)
+	}
+	unreached = failure
+	return found, scanner
+}
+
+// feederDevice connects to the first scanner on the cable with a feeder, or is nil: for the page
+// of before, which chooses no scanner. The caller releases it. The second answer is the id
+// Windows gives that scanner, for the log of a scan.
 func feederDevice() (*ole.IDispatch, string) {
 	var found *ole.IDispatch
 	var id string
@@ -372,20 +581,31 @@ func feederDevice() (*ole.IDispatch, string) {
 	return found, id
 }
 
-func scan(dir string, page func(path string)) *ScanError {
+func scan(settings Settings, dir string, page func(path string)) *ScanError {
 	started := time.Now()
-	device, id := feederDevice()
+	// the page of before sends nothing: the first scanner with a feeder, and the resolution the
+	// driver keeps when it refuses the one asked
+	before := settings.Scanner == ""
+	glass := settings.Source == SourceFlatbed
+	device, id := connect(settings.Scanner)
 	if device == nil {
-		logf("scan: no scanner with a feeder")
+		if before {
+			logf("scan: no scanner with a feeder")
+		} else {
+			logf("scan: %s is not there", settings.Scanner)
+		}
 		return &ScanError{Code: ErrorOff}
 	}
 	defer device.Release()
 	capabilities := number(device, wiaCapabilities)
-	logf("scan: %s connected in %s, capabilities %d, status %d", id,
-		time.Since(started).Round(100*time.Millisecond), capabilities, number(device, wiaStatus))
+	logf("scan: %s connected in %s, capabilities %d, status %d, asked %s, %d dots, %s", id,
+		time.Since(started).Round(100*time.Millisecond), capabilities, number(device, wiaStatus),
+		settings.Source, settings.Resolution, settings.Colour)
 
 	choice := int32(wiaFeeder)
-	if capabilities&wiaDuplex != 0 {
+	if glass {
+		choice = wiaFlatbed
+	} else if capabilities&wiaDuplex != 0 {
 		choice |= wiaDuplex
 	}
 	set(device, wiaSelect, choice)
@@ -399,31 +619,44 @@ func scan(dir string, page func(path string)) *ScanError {
 	defer item.Release()
 
 	// the colour first: some drivers put the resolution back when it changes
-	set(item, wiaIntent, wiaColour)
-	set(item, wiaHorizontal, Resolution)
-	set(item, wiaVertical, Resolution)
+	intent := int32(wiaColour)
+	if settings.Colour == ColourGrey {
+		intent = wiaGrey
+	}
+	set(item, wiaIntent, intent)
+	refused := put(item, wiaHorizontal, int32(settings.Resolution))
+	if err := put(item, wiaVertical, int32(settings.Resolution)); refused == nil {
+		refused = err
+	}
+	// the page that chooses asked for a resolution of this scanner: one the driver refuses stops
+	// the scan, it is not replaced with another
+	if refused != nil && !before {
+		return &ScanError{Code: ErrorScanner, Message: fmt.Sprintf("the scanner refused %d dots: %v", settings.Resolution, refused)}
+	}
 	set(item, wiaPageSize, 0)
 	// the area is in dots: it is an A4 only at the resolution the driver kept, which is not always
 	// the one asked. On 11/10/2026 a PC gave the middle two thirds of the sheet, as the area of
 	// 200 dots does at 300.
-	across, down := number(item, wiaHorizontal), number(item, wiaVertical)
+	across, down := int(number(item, wiaHorizontal)), int(number(item, wiaVertical))
 	if across <= 0 {
-		across = Resolution
+		across = settings.Resolution
 	}
 	if down <= 0 {
-		down = Resolution
+		down = settings.Resolution
 	}
+	width, _ := A4(across)
+	_, height := A4(down)
 	set(item, wiaLeft, 0)
 	set(item, wiaTop, 0)
-	set(item, wiaWidth, int32(A4Width*across/Resolution))
-	set(item, wiaHeight, int32(A4Height*down/Resolution))
+	set(item, wiaWidth, int32(width))
+	set(item, wiaHeight, int32(height))
 
 	// what the driver kept of what was asked, and how its feeder holds the sheet: an area in dots
 	// is the A4 only at the resolution asked, and from the side where the sheet lies
-	logf("scan: feeder choice %d, sides for each request %d, %d x %d dots, area %d x %d from %d,%d, page size %d",
-		number(device, wiaSelect), number(device, wiaPages), number(item, wiaHorizontal), number(item, wiaVertical),
-		number(item, wiaWidth), number(item, wiaHeight), number(item, wiaLeft), number(item, wiaTop),
-		number(item, wiaPageSize))
+	logf("scan: feeder choice %d, sides for each request %d, intent %d, %d x %d dots, area %d x %d from %d,%d, page size %d",
+		number(device, wiaSelect), number(device, wiaPages), number(item, wiaIntent), number(item, wiaHorizontal),
+		number(item, wiaVertical), number(item, wiaWidth), number(item, wiaHeight), number(item, wiaLeft),
+		number(item, wiaTop), number(item, wiaPageSize))
 	logf("scan: feeder sheet %d x %d thousandths of an inch, placed %d: asking for the first side",
 		number(device, wiaSheetWidth), number(device, wiaSheetHeight), number(device, wiaSheetPlace))
 
@@ -448,6 +681,11 @@ func scan(dir string, page func(path string)) *ScanError {
 		}
 		page(path)
 		logf("scan: side %d in %s, %s", side, time.Since(asked).Round(100*time.Millisecond), size)
+		if glass {
+			// on the glass there is one sheet, and one side of it
+			logf("scan: over, one side from the glass")
+			return nil
+		}
 	}
 }
 
@@ -511,8 +749,9 @@ func scanFailure(err error, sides int) *ScanError {
 	return &ScanError{Code: ErrorScanner, Message: message}
 }
 
-// describe lists what Windows sees, with every property of the scanners: for the probe.
-func describe(text *strings.Builder) {
+// describe lists what Windows sees, and of the scanner asked every property: for the probe and
+// the log. It connects only to that one.
+func describe(text *strings.Builder, scanner string) {
 	seen := 0
 	devices(func(info *ole.IDispatch) bool {
 		seen++
@@ -523,7 +762,9 @@ func describe(text *strings.Builder) {
 			return false
 		}
 		if onNetwork(info) {
-			fmt.Fprintln(text, "  on the network: left alone")
+			fmt.Fprintln(text, "  on the network")
+		}
+		if scanner == "" || get(info, "DeviceID").ToString() != scanner {
 			return false
 		}
 		connected, err := call(info, "Connect")
@@ -534,8 +775,9 @@ func describe(text *strings.Builder) {
 		device := connected.ToIDispatch()
 		defer device.Release()
 		capabilities := number(device, wiaCapabilities)
-		fmt.Fprintf(text, "  feeder: %v, both sides: %v, sheets in the feeder: %v\n",
-			capabilities&wiaFeeder != 0, capabilities&wiaDuplex != 0, number(device, wiaStatus)&wiaFeedReady != 0)
+		fmt.Fprintf(text, "  feeder: %v, glass: %v, both sides: %v, sheets in the feeder: %v\n",
+			capabilities&wiaFeeder != 0, capabilities&wiaFlatbed != 0, capabilities&wiaDuplex != 0,
+			number(device, wiaStatus)&wiaFeedReady != 0)
 		fmt.Fprintln(text, "  properties of the device:")
 		properties(text, device, "    ")
 
@@ -564,7 +806,12 @@ func properties(text *strings.Builder, object *ole.IDispatch, indent string) {
 		if read, err := oleutil.GetProperty(entry, "Value"); err == nil {
 			value = fmt.Sprint(read.Value())
 		}
-		fmt.Fprintf(text, "%s%d %s = %s\n", indent, get(entry, "PropertyID").Val, get(entry, "Name").ToString(), value)
+		// the values the driver takes, when it says them: of the resolution (6147) the page offers those
+		takes := ""
+		if values := allowed(entry); values != "anything" {
+			takes = ", takes " + values
+		}
+		fmt.Fprintf(text, "%s%d %s = %s%s\n", indent, get(entry, "PropertyID").Val, get(entry, "Name").ToString(), value, takes)
 		entry.Release()
 	}
 }

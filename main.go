@@ -121,7 +121,7 @@ func ready(installed bool) {
 	// what the system sees of the scanner, once: the first thing to read when a scan does not start
 	go func() {
 		time.Sleep(openingTime)
-		logf("scanner:\n%s", driver.Describe())
+		logf("scanners:\n%s", driver.Describe(""))
 	}()
 
 	if runtime.GOOS == "darwin" {

@@ -20,22 +20,42 @@ type feeder struct {
 	closed  bool        // the scanner was left to the other programs
 	sheets  chan string // what is on each side of the scan in progress
 	failure *ScanError  // how the scan in progress ends
+
+	list     []Scanner     // the scanners the system sees
+	has      *Capabilities // what the scanner asked by its id has, once open
+	listed   int           // how many times the list was asked
+	opened   []string      // the scanner and the source of every status asked, as "scanner/source"
+	settings []Settings    // the settings of every scan started
 }
 
 func newFeeder() *feeder {
 	return &feeder{status: ScannerReady, sheets: make(chan string)}
 }
 
-func (f *feeder) Status() string {
+func (f *feeder) List() []Scanner {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listed++
+	return f.list
+}
+
+// Status is what the test set, with what the scanner has only for the page that asks for one by
+// its id, and only when it is open.
+func (f *feeder) Status(scanner, source string) (string, *Capabilities) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.asked++
-	return f.status
+	f.opened = append(f.opened, scanner+"/"+source)
+	if scanner == "" || f.status == ScannerOff || f.status == ScannerOpening {
+		return f.status, nil
+	}
+	return f.status, f.has
 }
 
-func (f *feeder) Scan(dir string, page func(path string)) *ScanError {
+func (f *feeder) Scan(settings Settings, dir string, page func(path string)) *ScanError {
 	f.mu.Lock()
 	f.scans++
+	f.settings = append(f.settings, settings)
 	scan, sheets := f.scans, f.sheets
 	f.mu.Unlock()
 	side := 0
@@ -54,7 +74,7 @@ func (f *feeder) Scan(dir string, page func(path string)) *ScanError {
 	return failure
 }
 
-func (f *feeder) Describe() string { return "the scanner of the tests" }
+func (f *feeder) Describe(scanner string) string { return "the scanner of the tests" }
 
 func (f *feeder) Close() {
 	f.mu.Lock()
@@ -93,7 +113,7 @@ func sessionWith(t *testing.T, driver Driver) *Session {
 // scanAll starts a scan, feeds the sides given and waits for its end.
 func scanAll(t *testing.T, session *Session, scanner *feeder, failure *ScanError, sides ...string) {
 	t.Helper()
-	if !session.Start() {
+	if !session.Start(Before) {
 		t.Fatal("the scan does not start")
 	}
 	for _, side := range sides {
@@ -166,7 +186,7 @@ func TestNewSessionHasItsOwnEmptyFolder(t *testing.T) {
 func TestScanQueuesTheSidesAsTheyArrive(t *testing.T) {
 	scanner := newFeeder()
 	session := sessionWith(t, scanner)
-	if !session.Start() {
+	if !session.Start(Before) {
 		t.Fatal("the scan does not start")
 	}
 	if state, _, pages := session.Snapshot(); state != StateScanning || len(pages) != 0 {
@@ -207,10 +227,10 @@ func TestScanQueuesTheSidesAsTheyArrive(t *testing.T) {
 func TestOneScanAtATime(t *testing.T) {
 	scanner := newFeeder()
 	session := sessionWith(t, scanner)
-	if !session.Start() {
+	if !session.Start(Before) {
 		t.Fatal("the scan does not start")
 	}
-	if session.Start() {
+	if session.Start(Before) {
 		t.Error("a second scan starts under the first")
 	}
 	scanner.feed("side")
@@ -250,7 +270,7 @@ func TestScanThatStopsKeepsTheSidesAndSaysWhy(t *testing.T) {
 	}
 
 	// the sheet is freed and the scan started again: the error goes away, the sides stay
-	if !session.Start() {
+	if !session.Start(Before) {
 		t.Fatal("after an error the scan does not start")
 	}
 	if state, failure, _ := session.Snapshot(); state != StateScanning || failure != nil {
@@ -317,7 +337,7 @@ func TestClearDeletesEverySide(t *testing.T) {
 func TestClearIsRefusedDuringAScan(t *testing.T) {
 	scanner := newFeeder()
 	session := sessionWith(t, scanner)
-	if !session.Start() {
+	if !session.Start(Before) {
 		t.Fatal("the scan does not start")
 	}
 	scanner.feed("a")
@@ -349,5 +369,57 @@ func TestCloseLeavesNothingOnTheComputer(t *testing.T) {
 	}
 	if _, _, pages := session.Snapshot(); len(pages) != 0 || session.Path("1") != "" {
 		t.Errorf("%d sides still listed", len(pages))
+	}
+}
+
+func TestA4InDots(t *testing.T) {
+	for resolution, want := range map[int][2]int{150: {1240, 1754}, 200: {1654, 2339}, 300: {2480, 3508}} {
+		if width, height := A4(resolution); width != want[0] || height != want[1] {
+			t.Errorf("at %d dots: %d x %d, want %d x %d", resolution, width, height, want[0], want[1])
+		}
+	}
+}
+
+func TestSettingsAmongWhatTheScannerHas(t *testing.T) {
+	has := &Capabilities{Source: SourceFeeder, Sources: []string{SourceFeeder}, Resolutions: []int{150, 300},
+		Colours: []string{ColourColour, ColourGrey}}
+	good := Settings{Scanner: "one", Source: SourceFeeder, Resolution: 150, Colour: ColourGrey}
+	if !has.Has(good) {
+		t.Errorf("%+v is not among %+v", good, has)
+	}
+	for name, change := range map[string]func(*Settings){
+		"a source it does not have":     func(s *Settings) { s.Source = SourceFlatbed },
+		"a resolution it does not have": func(s *Settings) { s.Resolution = 200 },
+		"a colour it does not have":     func(s *Settings) { s.Colour = "blue" },
+	} {
+		settings := good
+		change(&settings)
+		if has.Has(settings) {
+			t.Errorf("%s: %+v counts as among %+v", name, settings, has)
+		}
+	}
+}
+
+// The page of before sends no settings: it gets the feeder, 200 dots and colour, as always.
+func TestScanOfThePageOfBefore(t *testing.T) {
+	if want := (Settings{Source: SourceFeeder, Resolution: 200, Colour: ColourColour}); Before != want {
+		t.Errorf("the page of before gets %+v, want %+v", Before, want)
+	}
+}
+
+func TestScanHandsTheSettingsToTheScanner(t *testing.T) {
+	scanner := newFeeder()
+	session := sessionWith(t, scanner)
+	asked := Settings{Scanner: "one", Source: SourceFlatbed, Resolution: 300, Colour: ColourGrey}
+	if !session.Start(asked) {
+		t.Fatal("the scan does not start")
+	}
+	scanner.feed("a side")
+	scanner.finish(nil)
+	until(t, "the end of the scan", func() bool { return !session.Scanning() })
+	scanner.mu.Lock()
+	defer scanner.mu.Unlock()
+	if !reflect.DeepEqual(scanner.settings, []Settings{asked}) {
+		t.Errorf("the scanner got %+v, want %+v", scanner.settings, asked)
 	}
 }

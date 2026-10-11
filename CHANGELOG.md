@@ -10,7 +10,7 @@ Numeri di versione ([SemVer](https://semver.org/lang/it/)):
 
 Le novità ancora da pubblicare stanno in **Non rilasciato**: ogni modifica a quello che l'agente fa, o a quello che vede chi lo usa, si aggiunge lì nello stesso commit. Sotto *Strumenti* va quello che cambia solo per chi lavora qui (script, regole). Nella parte *Per il rilascio* vanno le cose da fare in Family Manager perché la versione funzioni, per esempio una richiesta da cambiare anche nella pagina.
 
-Per pubblicare, `./close-version.py X.Y.Z` chiude la versione (il numero lo sceglie il proprietario) e `./release.sh` la pubblica, con le note prese da qui: i passi sono nel `README.md`. Pubblicare non basta: Family Manager offre la versione scritta nel suo `scripts/fetch-agent.mjs`.
+Per pubblicare, `./close-version.py X.Y.Z` chiude la versione (il numero lo sceglie il proprietario) e `./release.sh` la pubblica, con le note prese da qui: i passi sono nel `README.md`. Pubblicare basta: la pagina *Scansiona* di Family Manager offre l'ultima versione pubblicata, entro un'ora.
 
 ## [Non rilasciato]
 
@@ -21,7 +21,19 @@ Per pubblicare, `./close-version.py X.Y.Z` chiude la versione (il numero lo sceg
 
 ### Novità
 
+- **Lo scanner, la risoluzione e il colore li sceglie la pagina.** L'agente elenca gli scanner che il computer vede, sul cavo e in rete, senza aprirne nessuno (`GET /scanners`); apre solo quello che la pagina chiede, e lascia quello di prima; di quello aperto dice da dove legge, le risoluzioni e i colori; e scansiona con le scelte della pagina: lo scanner, il caricatore o il vetro, i punti, a colori o in grigio. Le richieste nuove portano `api=2` nell'indirizzo.
+- **Si scansiona anche dal vetro**, una facciata per volta: per una multifunzione senza caricatore, o per un foglio che nel caricatore non passa.
+- **Gli scanner di rete si possono usare**, sul Mac e su Windows: compaiono nell'elenco, e l'agente ne apre uno solo quando la pagina lo sceglie. Finché nessuno li sceglie restano a riposo, come prima.
+- **Una risoluzione che lo scanner non ha, o rifiuta, ferma la scansione** con un errore che dice quale: l'agente non ne usa più un'altra al suo posto. Sul Mac prima prendeva la più vicina sopra.
+- **Con la pagina di prima non cambia niente**: a una richiesta senza `api=2` l'agente risponde come ha sempre fatto, con il primo scanner sul cavo che ha il caricatore, a 200 punti e a colori. Sul Mac però lo apre alla prima richiesta della pagina, non più all'avvio.
+- **La prova (`scanner-probe`) elenca gli scanner senza aprirne nessuno**, anche quelli di rete, ognuno con il suo identificativo; con un identificativo apre quello e dice cosa ha. Su Windows di ogni proprietà del driver scrive anche i valori che accetta.
 - **Su Windows `agent.log` dice a che punto è una scansione**: ogni passo lascia una riga `scan:` (la richiesta, l'attesa del thread di WIA, lo scanner scelto e in quanto tempo si è collegato, le impostazioni che il driver ha tenuto (risoluzione e area comprese), come il caricatore tiene il foglio, ogni facciata con il suo tempo e la sua misura, la fine). Di un valore rifiutato dal driver (`WIA property … refused`) scrive anche il codice dell'errore, il valore che resta e quelli che il driver accetta. Prima, tra `POST /scan` e la prima facciata l'agente non scriveva niente: una scansione che non parte lasciava la pagina su *Scansione in corso…* e il log vuoto, come è successo l'11/10/2026 sul PC. L'ultima riga dice dove si è fermata. Scritto senza poterlo provare.
+
+La parte di Windows di queste novità è scritta senza poterla provare: compila, e si prova sul PC.
+
+### Per il rilascio
+
+- Le scelte compaiono nella pagina *Scansiona* dal rilascio di Family Manager che le porta (la pagina manda `api=2`). Fino a quel giorno la pagina di prima continua a funzionare con questa versione, senza scelte: l'agente si può pubblicare prima.
 
 ### Strumenti
 

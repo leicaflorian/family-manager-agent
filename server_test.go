@@ -110,7 +110,7 @@ func (a *agent) scan(t *testing.T, site string, failure *ScanError, sides ...str
 
 // The requests of the page, one for each line of the table in the README.
 var requests = [][2]string{
-	{"GET", "/status"}, {"POST", "/scan"}, {"GET", "/pages"}, {"GET", "/pages/1"}, {"DELETE", "/pages"},
+	{"GET", "/scanners"}, {"GET", "/status"}, {"POST", "/scan"}, {"GET", "/pages"}, {"GET", "/pages/1"}, {"DELETE", "/pages"},
 }
 
 // Without a site as Origin, or to another Host, nothing is answered and nothing is asked: not the
@@ -440,6 +440,7 @@ func TestOtherRequestsAreNotThere(t *testing.T) {
 		{"GET", "/scan"}:       http.StatusMethodNotAllowed,
 		{"PUT", "/scan"}:       http.StatusMethodNotAllowed,
 		{"POST", "/status"}:    http.StatusMethodNotAllowed,
+		{"POST", "/scanners"}:  http.StatusMethodNotAllowed,
 		{"DELETE", "/status"}:  http.StatusMethodNotAllowed,
 		{"DELETE", "/pages/1"}: http.StatusMethodNotAllowed,
 		{"GET", "/origins"}:    http.StatusNotFound,
@@ -559,5 +560,212 @@ func TestLogOfRefusedCallsHasALimit(t *testing.T) {
 	}
 	if lines := book.lines("refused:"); len(lines) != refusedKept {
 		t.Errorf("%d lines, want %d", len(lines), refusedKept)
+	}
+}
+
+// fields are the fields of an answer, whatever they hold.
+func (r reply) fields(t *testing.T) map[string]any {
+	t.Helper()
+	fields := map[string]any{}
+	if err := json.Unmarshal(r.body, &fields); err != nil {
+		t.Fatalf("%s: %v", r.body, err)
+	}
+	return fields
+}
+
+// asked is the scanner and the source of every status the scanner of the test was asked.
+func (a *agent) asked() []string {
+	a.scanner.mu.Lock()
+	defer a.scanner.mu.Unlock()
+	return append([]string{}, a.scanner.opened...)
+}
+
+var twoScanners = []Scanner{
+	{ID: "one", Name: "The one with the feeder", Connection: ConnectionUSB},
+	{ID: "two", Name: "The one with the glass", Connection: ConnectionNetwork},
+}
+
+var feederOnly = &Capabilities{Source: SourceFeeder, Sources: []string{SourceFeeder}, Resolutions: []int{150, 200, 300},
+	Colours: []string{ColourColour, ColourGrey}}
+
+// The list says the scanners the system sees, and opens none: nothing is asked of a scanner.
+func TestScannersListsWithoutOpeningAny(t *testing.T) {
+	a := startAgent(t, map[string]bool{siteHome: true})
+	if got := a.call(t, "GET", "/scanners", siteHome); got.status != http.StatusOK || strings.TrimSpace(string(got.body)) != `{"scanners":[]}` {
+		t.Errorf("with no scanner: %d %s", got.status, got.body)
+	}
+	a.scanner.mu.Lock()
+	a.scanner.list = twoScanners
+	a.scanner.mu.Unlock()
+
+	got := a.call(t, "GET", "/scanners", siteHome)
+	want := `{"scanners":[{"id":"one","name":"The one with the feeder","connection":"usb"},` +
+		`{"id":"two","name":"The one with the glass","connection":"network"}]}`
+	if strings.TrimSpace(string(got.body)) != want {
+		t.Errorf("the list: %s, want %s", got.body, want)
+	}
+	if asked := a.asked(); len(asked) != 0 {
+		t.Errorf("a scanner was opened for the list: %v", asked)
+	}
+}
+
+// During a scan the scanner is busy: the list is the last one, without asking again.
+func TestScannersDuringAScanIsTheLastList(t *testing.T) {
+	a := startAgent(t, map[string]bool{siteHome: true})
+	a.scanner.list = twoScanners
+	a.call(t, "GET", "/scanners", siteHome)
+	if got := a.call(t, "POST", "/scan", siteHome); got.status != http.StatusAccepted {
+		t.Fatalf("POST /scan: %d %s", got.status, got.body)
+	}
+	got := a.call(t, "GET", "/scanners", siteHome)
+	if list, _ := got.fields(t)["scanners"].([]any); len(list) != 2 {
+		t.Errorf("during the scan: %s", got.body)
+	}
+	a.scanner.mu.Lock()
+	listed := a.scanner.listed
+	a.scanner.mu.Unlock()
+	if listed != 1 {
+		t.Errorf("the list was asked %d times, want 1", listed)
+	}
+	a.scanner.finish(nil)
+	until(t, "the end of the scan", func() bool { return !a.session.Scanning() })
+}
+
+// The page that chooses the scanner sends api=2. Until it has chosen one, none is opened.
+func TestStatusWithoutAChosenScannerOpensNone(t *testing.T) {
+	a := startAgent(t, map[string]bool{siteHome: true})
+	a.scanner.has = feederOnly
+	got := a.call(t, "GET", "/status?api=2", siteHome).fields(t)
+	if got["api"] != float64(API) || got["scanner"] != ScannerOff {
+		t.Errorf("without a scanner: %v", got)
+	}
+	if _, there := got["resolutions"]; there {
+		t.Errorf("without a scanner the answer says what a scanner has: %v", got)
+	}
+	if asked := a.asked(); len(asked) != 0 {
+		t.Errorf("a scanner was opened: %v", asked)
+	}
+}
+
+func TestStatusOfTheChosenScannerSaysWhatItHas(t *testing.T) {
+	runAs(t, "1.2.3")
+	a := startAgent(t, map[string]bool{siteHome: true})
+	a.scanner.has = feederOnly
+	a.scanner.status = ScannerEmpty
+
+	got := a.call(t, "GET", "/status?api=2&scanner=one", siteHome).fields(t)
+	want := map[string]any{"version": "1.2.3", "os": runtime.GOOS, "api": float64(API), "scanner": ScannerEmpty,
+		"source": SourceFeeder, "sources": []any{SourceFeeder}, "resolutions": []any{150.0, 200.0, 300.0},
+		"colours": []any{ColourColour, ColourGrey}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("the chosen scanner: %v, want %v", got, want)
+	}
+	a.call(t, "GET", "/status?api=2&scanner=two&source=flatbed", siteHome)
+	if asked := a.asked(); !reflect.DeepEqual(asked, []string{"one/", "two/flatbed"}) {
+		t.Errorf("the scanner was asked for %v", asked)
+	}
+}
+
+// While the scanner asked opens, and when it is off, the answer says only how it is.
+func TestStatusOfAScannerNotOpenSaysOnlyHowItIs(t *testing.T) {
+	a := startAgent(t, map[string]bool{siteHome: true})
+	a.scanner.has = feederOnly
+	for _, state := range []string{ScannerOpening, ScannerOff} {
+		a.scanner.mu.Lock()
+		a.scanner.status = state
+		a.scanner.mu.Unlock()
+		got := a.call(t, "GET", "/status?api=2&scanner=one", siteHome).fields(t)
+		if got["scanner"] != state || got["api"] != float64(API) {
+			t.Errorf("scanner %s: %v", state, got)
+		}
+		if _, there := got["sources"]; there {
+			t.Errorf("scanner %s: the answer says what it has: %v", state, got)
+		}
+	}
+}
+
+func TestStatusRefusesASourceThatDoesNotExist(t *testing.T) {
+	a := startAgent(t, map[string]bool{siteHome: true})
+	if got := a.call(t, "GET", "/status?api=2&scanner=one&source=tray", siteHome); got.status != http.StatusBadRequest || got.reason() != "settings" {
+		t.Errorf("an unknown source: %d %s", got.status, got.body)
+	}
+	if asked := a.asked(); len(asked) != 0 {
+		t.Errorf("the scanner was asked: %v", asked)
+	}
+}
+
+// The page of before sends nothing: it gets the answer it always got, of the first scanner on the
+// cable with a feeder, whatever its address carries besides.
+func TestStatusOfThePageOfBeforeChoosesNoScanner(t *testing.T) {
+	a := startAgent(t, map[string]bool{siteHome: true})
+	a.scanner.has = feederOnly
+	got := a.call(t, "GET", "/status?scanner=one&source=flatbed", siteHome).fields(t)
+	if len(got) != 3 || got["scanner"] != ScannerReady {
+		t.Errorf("the page of before: %v", got)
+	}
+	if asked := a.asked(); !reflect.DeepEqual(asked, []string{"/"}) {
+		t.Errorf("the scanner was asked for %v, want the one of the page of before", asked)
+	}
+}
+
+func TestScanWithTheSettingsOfThePage(t *testing.T) {
+	a := startAgent(t, map[string]bool{siteHome: true})
+	a.scanner.has = feederOnly
+	if got := a.call(t, "POST", "/scan?api=2&scanner=one&source=feeder&resolution=150&colour=grey", siteHome); got.status != http.StatusAccepted {
+		t.Fatalf("POST /scan: %d %s", got.status, got.body)
+	}
+	a.scanner.finish(nil)
+	until(t, "the end of the scan", func() bool { return !a.session.Scanning() })
+	// the page of before, with settings in its address that it never sent
+	if got := a.call(t, "POST", "/scan?scanner=one&resolution=300", siteHome); got.status != http.StatusAccepted {
+		t.Fatalf("POST /scan of the page of before: %d %s", got.status, got.body)
+	}
+	a.scanner.finish(nil)
+	until(t, "the end of the scan", func() bool { return !a.session.Scanning() })
+
+	a.scanner.mu.Lock()
+	defer a.scanner.mu.Unlock()
+	want := []Settings{{Scanner: "one", Source: SourceFeeder, Resolution: 150, Colour: ColourGrey}, Before}
+	if !reflect.DeepEqual(a.scanner.settings, want) {
+		t.Errorf("the scanner got %+v, want %+v", a.scanner.settings, want)
+	}
+}
+
+// Settings the scanner does not have, or that are not settings, start no scan.
+func TestScanRefusesSettingsTheScannerDoesNotHave(t *testing.T) {
+	a := startAgent(t, map[string]bool{siteHome: true})
+	a.scanner.has = feederOnly
+	for name, query := range map[string]string{
+		"no scanner":                    "source=feeder&resolution=150&colour=grey",
+		"no resolution":                 "scanner=one&source=feeder&colour=grey",
+		"a resolution it does not have": "scanner=one&source=feeder&resolution=175&colour=grey",
+		"a source it does not have":     "scanner=one&source=flatbed&resolution=150&colour=grey",
+		"a source that does not exist":  "scanner=one&source=tray&resolution=150&colour=grey",
+		"a colour that does not exist":  "scanner=one&source=feeder&resolution=150&colour=blue",
+	} {
+		if got := a.call(t, "POST", "/scan?api=2&"+query, siteHome); got.status != http.StatusBadRequest || got.reason() != "settings" {
+			t.Errorf("%s: %d %s", name, got.status, got.body)
+		}
+	}
+	if _, scans := a.scanner.count(); scans != 0 {
+		t.Errorf("%d scans started", scans)
+	}
+	if a.session.Scanning() {
+		t.Error("a scan is running")
+	}
+}
+
+// What a scanner that is off has is not known: the scan starts, and says itself that it is off.
+func TestScanOfAScannerThatIsOffStartsAndSaysSo(t *testing.T) {
+	a := startAgent(t, map[string]bool{siteHome: true})
+	a.scanner.has = feederOnly
+	a.scanner.status = ScannerOff
+	if got := a.call(t, "POST", "/scan?api=2&scanner=one&source=feeder&resolution=1200&colour=grey", siteHome); got.status != http.StatusAccepted {
+		t.Fatalf("POST /scan: %d %s", got.status, got.body)
+	}
+	a.scanner.finish(&ScanError{Code: ErrorOff})
+	until(t, "the end of the scan", func() bool { return !a.session.Scanning() })
+	if got := a.call(t, "GET", "/pages", siteHome); got.text("error") != ErrorOff {
+		t.Errorf("GET /pages: %s", got.body)
 	}
 }
