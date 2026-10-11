@@ -45,9 +45,11 @@ Nella barra dei menu del Mac c'è invece un disegno a un colore, fatto dal codic
 ## Pubblicare una versione
 
 1. Alzare il numero in `VERSION`, se questa versione deve prendere il posto di quella che la gente ha già: la pagina avvisa chi ha un agente più vecchio.
-2. Commit di tutto, su `main`.
-3. `./release.sh`: compila, mette il tag `vX.Y.Z` sul commit, fa il push e crea la release su GitHub con i due zip e `version.json`. Si ferma se c'è qualcosa di non committato o se la versione è già pubblicata.
-4. Alla fine stampa le impronte (sha256) dei tre file. In Family Manager vanno scritte, con il numero della versione, in `scripts/fetch-agent.mjs`: finché non lo si fa, Family Manager continua a offrire la versione di prima.
+2. Commit di tutto, su `dev`: è il branch su cui si sviluppa. `main` contiene solo le versioni pubblicate.
+3. Portare `dev` in `main`: `git checkout main && git merge --ff-only dev`.
+4. `./release.sh`: compila, mette il tag `vX.Y.Z` sul commit, fa il push di `main` e crea la release su GitHub con i due zip e `version.json`. Si ferma se non si è su `main`, se c'è qualcosa di non committato o se la versione è già pubblicata.
+5. Alla fine stampa le impronte (sha256) dei tre file. In Family Manager vanno scritte, con il numero della versione, in `scripts/fetch-agent.mjs`: finché non lo si fa, Family Manager continua a offrire la versione di prima.
+6. Tornare su `dev`: `git checkout dev`.
 
 Serve `gh` (`brew install gh`) con l'accesso fatto.
 

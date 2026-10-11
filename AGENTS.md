@@ -47,7 +47,8 @@ Il programma in Go che comanda lo scanner attaccato al computer per conto della 
 
 ## Versioni e rilasci
 
-- `release.sh` parte solo da `main`, con tutto committato. Prima di un commit si controllano `git status` e il branch (`git branch --show-current`), e non si toccano i file non committati che non sono propri.
+- Si sviluppa sul branch `dev`, come in Family Manager (dall'11/10/2026): i commit vanno lì. `main` contiene solo le versioni pubblicate e non ci si committa: per pubblicare si porta `dev` in `main` (`git merge --ff-only dev`) e da `main` si lancia `release.sh`, che parte solo da lì e con tutto committato. Poi si torna su `dev`.
+- Prima di un commit si controllano `git status` e il branch (`git branch --show-current`), e non si toccano i file non committati che non sono propri.
 - Il push rende pubblico il commit: si fa solo quando il proprietario lo chiede, o con `release.sh`.
 - La versione è nel file `VERSION`. Va alzata a ogni pubblicazione: la pagina avvisa chi ha un agente più vecchio di quello che Family Manager offre.
 - **Pubblicare qui non basta.** Family Manager offre la versione scritta in `scripts/fetch-agent.mjs` (`VERSION` e le tre impronte, che `release.sh` stampa alla fine): finché lo script non cambia e Family Manager non viene rilasciato, la pagina continua a offrire quella di prima.

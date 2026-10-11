@@ -7,21 +7,23 @@ disable-model-invocation: true
 
 # Pubblicare una versione dell'agente
 
-Il lavoro lo fa `release.sh` (leggi la sua intestazione): compila, mette il tag `vX.Y.Z`, fa il push di `main` e crea la release su GitHub con i due zip e `version.json`. Qui lo si guida dalla conversazione. Quello che esce è pubblico e non si ritira: una versione pubblicata non si pubblica di nuovo.
+Si sviluppa su `dev`; `main` contiene solo le versioni pubblicate. Il lavoro lo fa `release.sh` (leggi la sua intestazione), che parte solo da `main`: compila, mette il tag `vX.Y.Z`, fa il push di `main` e crea la release su GitHub con i due zip e `version.json`. Qui lo si guida dalla conversazione, portando prima `dev` in `main`. Quello che esce è pubblico e non si ritira: una versione pubblicata non si pubblica di nuovo.
 
 ## 1. Stato di partenza
 
 ```sh
 git fetch --tags origin
-git branch --show-current              # deve essere main
+git branch --show-current              # deve essere dev
 git status --short
 cat VERSION
 git describe --tags --abbrev=0         # l'ultima versione pubblicata
-git log --oneline <ultima versione>..HEAD
+git log --oneline <ultima versione>..dev
+git log --oneline dev..main            # deve essere vuoto: main non ha niente che dev non abbia
 gh auth status
 ```
 
-- **Modifiche non committate**: elencarle all'utente e chiedere se fanno parte della versione. `release.sh` parte solo con tutto committato.
+- **Modifiche non committate**: elencarle all'utente e chiedere se fanno parte della versione. Se sì, commit su `dev`. `release.sh` parte solo con tutto committato.
+- **`main` ha commit che `dev` non ha**: fermarsi e dirlo. `dev` deve entrare in `main` senza un commit di unione.
 - **Niente di nuovo dall'ultima versione**: dirlo e fermarsi.
 
 ## 2. Documentazione
@@ -40,11 +42,16 @@ Con il numero confermato:
 ./build.sh          # la prova: go vet per i due sistemi e i due programmi
 ```
 
-Scrivere il numero in `VERSION`, fare il commit su `main`, poi:
+Scrivere il numero in `VERSION`, fare il commit su `dev`, poi:
 
 ```sh
+git checkout main
+git merge --ff-only dev
 ./release.sh
+git checkout dev
 ```
+
+Alla fine `dev` e `main` sono sullo stesso commit, quello con il tag. Se `release.sh` si ferma, la cartella resta su `main`: dopo aver capito perché si torna su `dev`, dove si corregge.
 
 Se si ferma dopo aver messo il tag (il push o `gh` non riescono), il tag resta in locale e rilanciandolo risponde che la versione è già pubblicata. Prima di togliere il tag o di finire a mano si guarda cosa è arrivato su GitHub: `git ls-remote --tags origin` e `gh release view vX.Y.Z`.
 
