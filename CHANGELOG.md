@@ -14,6 +14,10 @@ Per pubblicare, `./close-version.py X.Y.Z` chiude la versione (il numero lo sceg
 
 ## [Non rilasciato]
 
+Niente ancora.
+
+## [1.2.0] - 2026-10-11
+
 ### Novità
 
 - **Informazioni, dal menu dell'icona**: apre una finestra che dice cos'è l'agente (comanda lo scanner del computer per la pagina *Scansiona*, risponde solo ai siti accettati, si chiude da solo e non lascia scansioni), quale versione è aperta, e quali siti sono stati accettati o rifiutati.
@@ -65,6 +69,7 @@ Prima versione pubblicata da questo repository: fino a questo giorno l'agente er
 - `build.sh` compila i due programmi dal Mac e scrive i due zip con `version.json`; `release.sh` li pubblica come release di GitHub.
 - La prova (`./build.sh probe`) dice cosa il sistema vede dello scanner, senza far passare fogli; `test-windows.cmd` prova l'agente su Windows senza la pagina.
 
-[Non rilasciato]: https://github.com/leicaflorian/family-manager-agent/compare/v1.1.0...HEAD
+[Non rilasciato]: https://github.com/leicaflorian/family-manager-agent/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/leicaflorian/family-manager-agent/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/leicaflorian/family-manager-agent/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/leicaflorian/family-manager-agent/releases/tag/v1.0.0
