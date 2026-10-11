@@ -1,10 +1,13 @@
 // Family Manager Agent: commands the scanner of this computer on behalf of the page "Scansiona"
 // of Family Manager. It starts when the page opens familymanageragent://open, answers on
 // 127.0.0.1:47115 only to the sites the owner accepted, and quits after ten minutes of silence.
+// While it is open it looks for a newer version among its releases, and installs it when it quits,
+// or at once when the owner asks from the menu.
 package main
 
 import (
 	_ "embed"
+	"errors"
 	"log"
 	"net"
 	"os"
@@ -13,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -33,6 +37,10 @@ var mode string
 var (
 	driver   Driver
 	session  *Session
+	updater  *Updater
+	listener net.Listener
+	// true when the agent quits to start again as the version it has just installed
+	restart  atomic.Bool
 	quitOnce sync.Once
 )
 
@@ -60,8 +68,8 @@ func main() {
 		probe()
 		return
 	}
-	listener, err := net.Listen("tcp", Address)
-	if err != nil {
+	var err error
+	if listener, err = net.Listen("tcp", Address); err != nil {
 		// an agent is already open (the page opened the link twice): this one has nothing to do,
 		// and leaves the log of the other alone
 		if otherAgent() {
@@ -73,12 +81,12 @@ func main() {
 	openLog()
 	logf("%s %s on %s/%s", appName, Version, runtime.GOOS, runtime.GOARCH)
 	install()
-	systray.Run(func() { ready(listener) }, quit)
+	systray.Run(ready, quit)
 	// on the Mac the loop ends without calling quit
 	quit()
 }
 
-func ready(listener net.Listener) {
+func ready() {
 	driver = newDriver()
 	var err error
 	if session, err = NewSession(driver); err != nil {
@@ -111,9 +119,21 @@ func ready(listener net.Listener) {
 	systray.SetTooltip(appName)
 	title := systray.AddMenuItem(appName+" "+Version, "")
 	title.Disable()
+	// shown when a newer version is downloaded and waits for the agent to quit
+	waiting := systray.AddMenuItem("", "")
+	waiting.Disable()
+	waiting.Hide()
+	update := systray.AddMenuItem(updateTitle, "")
 	systray.AddSeparator()
 	forget := systray.AddMenuItem("Dimentica i siti accettati", "")
 	leave := systray.AddMenuItem("Esci", "")
+
+	updater = NewUpdater(func(version string) {
+		waiting.SetTitle("Versione " + version + " pronta: si installa alla chiusura")
+		waiting.Show()
+		update.SetTitle("Installa adesso la versione " + version)
+	})
+	go updater.Run()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -124,6 +144,9 @@ func ready(listener net.Listener) {
 			case <-forget.ClickedCh:
 				origins.Forget()
 				logf("accepted sites forgotten")
+			case <-update.ClickedCh:
+				// in its own thread: the check can take as long as the download
+				go updateNow(update, waiting)
 			case <-idle.C:
 				if !server.Idle() {
 					continue
@@ -142,7 +165,48 @@ func ready(listener net.Listener) {
 	}()
 }
 
-// quit leaves the scanner to the other programs and deletes the sides still in the temporary folder.
+// The entry of the menu that looks for a newer version now; once one is downloaded it carries its number.
+const updateTitle = "Cerca aggiornamenti"
+
+// updateNow is the entry of the menu: the check the agent makes by itself, made now, and the new
+// version installed at once instead of when the agent quits. The agent then starts again. The
+// answer is always a window: the owner asked.
+func updateNow(entry, waiting *systray.MenuItem) {
+	entry.Disable()
+	defer entry.Enable()
+	found, version, err := updater.Check()
+	switch {
+	case errors.Is(err, errFixed):
+		tell(appName, "Questa copia dell'agente non può aggiornarsi da sola.\n\nSposta Family Manager Agent nella cartella Applicazioni e riaprilo.")
+		return
+	case err != nil:
+		logf("update: %v", err)
+		tell(appName, "Non riesco a cercare gli aggiornamenti.\n\nControlla la connessione e riprova. Il motivo è scritto in agent.log.")
+		return
+	case found == updateNone:
+		tell(appName, "Questa è già l'ultima versione ("+Version+").")
+		return
+	case found == updateLater:
+		tell(appName, "La versione "+version+" non si installa da qui: si scarica dalla pagina Scansiona di Family Manager, che la offre quando è pronta per lei.")
+		return
+	case session.Scanning():
+		tell(appName, "La versione "+version+" è pronta, ma c'è una scansione in corso.\n\nVerrà installata quando l'agente si chiude.")
+		return
+	}
+	// installed here and not in quit: if it does not get there the agent is still open to say so
+	if _, err := updater.Install(); err != nil {
+		entry.SetTitle(updateTitle)
+		waiting.Hide()
+		tell(appName, "Non sono riuscito a installare la versione "+version+".\n\nL'agente resta alla "+Version+". Il motivo è scritto in agent.log.")
+		return
+	}
+	restart.Store(true)
+	systray.Quit()
+}
+
+// quit leaves the scanner to the other programs, deletes the sides still in the temporary folder
+// and, when a newer version was downloaded, puts it in the place of this one. After an update
+// asked from the menu it starts the agent again.
 func quit() {
 	quitOnce.Do(func() {
 		if driver != nil {
@@ -150,6 +214,16 @@ func quit() {
 		}
 		if session != nil {
 			session.Close()
+		}
+		if updater != nil {
+			updater.Install()
+		}
+		if restart.Load() {
+			// the port first: the new agent quits at once when it finds another one on it
+			listener.Close()
+			if err := restartProgram(updateTarget()); err != nil {
+				logf("update: restart: %v", err)
+			}
 		}
 		logf("quit")
 	})

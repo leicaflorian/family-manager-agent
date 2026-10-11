@@ -71,6 +71,8 @@ mkdir -p "$DEST"
 rm -f "$DEST/$MAC_ZIP" "$DEST/$WINDOWS_ZIP"
 ditto -c -k --keepParent "$APP" "$DEST/$MAC_ZIP"
 (cd "$OUT" && zip -q -X "../$DEST/$WINDOWS_ZIP" "Family Manager Agent.exe")
+# the fingerprints are what an agent checks before installing the zip it downloaded (update.go)
+fingerprint() { shasum -a 256 "$1" | cut -d ' ' -f 1; }
 cat > "$DEST/version.json" <<JSON
 {
     "version": "$VERSION",
@@ -78,6 +80,10 @@ cat > "$DEST/version.json" <<JSON
     "files": {
         "mac": "$MAC_ZIP",
         "windows": "$WINDOWS_ZIP"
+    },
+    "sha256": {
+        "mac": "$(fingerprint "$DEST/$MAC_ZIP")",
+        "windows": "$(fingerprint "$DEST/$WINDOWS_ZIP")"
     }
 }
 JSON

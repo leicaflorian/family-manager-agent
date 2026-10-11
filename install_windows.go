@@ -24,12 +24,13 @@ func install() {
 		logf("install: %v", err)
 		return
 	}
-	base, err := os.UserCacheDir() // %LOCALAPPDATA%
+	target, err := installPath()
 	if err != nil {
 		logf("install: %v", err)
 		return
 	}
-	target := filepath.Join(base, "FamilyManagerAgent", programName)
+	// the program an update moved aside (see replaceProgram): no agent runs from it any more
+	os.Remove(target + oldSuffix)
 	if !strings.EqualFold(filepath.Clean(current), filepath.Clean(target)) {
 		// the copy fails while an agent started from there is running: the one already there stays
 		if err := copyFile(current, target); err != nil {
@@ -55,6 +56,15 @@ func install() {
 	}
 	defer command.Close()
 	command.SetStringValue("", `"`+target+`" "%1"`)
+}
+
+// installPath is where the program lives: %LOCALAPPDATA%\FamilyManagerAgent.
+func installPath() (string, error) {
+	base, err := os.UserCacheDir() // %LOCALAPPDATA%
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "FamilyManagerAgent", programName), nil
 }
 
 func copyFile(from, to string) error {

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Publishes the version written in VERSION: builds the agent, tags the commit vX.Y.Z, pushes, and
-# makes the release on GitHub with the two zips and version.json.
+# makes the release on GitHub with the two zips and version.json. The notes of the release are the
+# section of the version in CHANGELOG.md, which close-version.py writes.
 #
 #   ./release.sh
 #
@@ -22,11 +23,19 @@ if git rev-parse -q --verify "refs/tags/$TAG" > /dev/null; then
     stop "The version $VERSION is already published: raise the number in VERSION."
 fi
 
+# the section "## [X.Y.Z] - date" of the changelog, up to the next section or the list of links
+NOTES="$(awk -v v="$VERSION" '
+    index($0, "## [" v "]") == 1 { on = 1; next }
+    on && (/^## \[/ || /^\[[^]]+\]: /) { exit }
+    on { print }
+' CHANGELOG.md)"
+[ -n "${NOTES//[[:space:]]/}" ] || stop "No section [$VERSION] in CHANGELOG.md: close the version first, ./close-version.py $VERSION"
+
 ./build.sh
 
 git tag "$TAG"
 git push origin main "$TAG"
-gh release create "$TAG" "${FILES[@]}" --title "Family Manager Agent $VERSION" --generate-notes
+printf '%s\n' "$NOTES" | gh release create "$TAG" "${FILES[@]}" --title "Family Manager Agent $VERSION" --notes-file -
 
 echo
 echo "Published. In Family Manager, scripts/fetch-agent.mjs: the version $VERSION and"
