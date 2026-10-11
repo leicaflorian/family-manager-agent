@@ -82,13 +82,15 @@ func main() {
 	}
 	openLog()
 	logf("%s %s on %s/%s", appName, Version, runtime.GOOS, runtime.GOARCH)
-	install()
-	systray.Run(ready, quit)
+	installed := install()
+	systray.Run(func() { ready(installed) }, quit)
 	// on the Mac the loop ends without calling quit
 	quit()
 }
 
-func ready() {
+// ready opens the scanner, the server and the icon with its menu. With installed, the start that
+// put the program in its folder, it then says so in a window: the icon alone is easy to miss.
+func ready(installed bool) {
 	driver = newDriver()
 	var err error
 	if session, err = NewSession(driver); err != nil {
@@ -152,6 +154,11 @@ func ready() {
 		update.SetTitle("Installa adesso la versione " + version)
 	})
 	go updater.Run()
+
+	if installed {
+		// in its own thread: the window stays open until OK is clicked, and the agent already answers
+		go tellInstalled()
+	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
