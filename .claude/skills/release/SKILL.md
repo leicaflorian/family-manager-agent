@@ -20,11 +20,13 @@ git describe --tags --abbrev=0         # l'ultima versione pubblicata
 git log --oneline <ultima versione>..dev
 git log --oneline dev..main            # deve essere vuoto: main non ha niente che dev non abbia
 gh auth status
+lsof -nP -iTCP:47115 -sTCP:LISTEN      # l'agente aperto, se c'è, e da dove gira
 ```
 
 - **Modifiche non committate**: elencarle all'utente e chiedere se fanno parte della versione. Se sì, commit su `dev`. `release.sh` parte solo con tutto committato.
 - **`main` ha commit che `dev` non ha**: fermarsi e dirlo. `dev` deve entrare in `main` senza un commit di unione.
 - **Niente di nuovo dall'ultima versione**: dirlo e fermarsi.
+- **È aperto l'agente compilato in `build/`**: lo chiude il proprietario, prima di `build.sh` e di `release.sh`, che cancellano e rifanno quell'app. Finché è aperto, il controllo si fa in una copia della cartella. Con la porta occupata non si fa nemmeno la prova con il server finto (`CLAUDE.md`, *Lavorare sul codice*).
 
 ## 2. Changelog e documentazione
 
@@ -65,5 +67,5 @@ Se si ferma dopo aver messo il tag (il push o `gh` non riescono), il tag resta i
 ## 5. Resoconto
 
 - La versione, l'indirizzo della release, le tre impronte (sha256) stampate da `release.sh`.
-- **Cosa resta da fare in Family Manager** (`~/Dev/family-manager-cms`), senza il quale la pagina continua a offrire la versione di prima: in `scripts/fetch-agent.mjs` il numero in `VERSION` e le tre impronte, poi `node scripts/fetch-agent.mjs`, il changelog e il commit su `dev`. Quel repository ha le sue regole (`CLAUDE.md`): il passo si fa da lì, oppure da qui se l'utente lo chiede, dopo averle lette.
+- **In Family Manager non resta niente da fare** perché la pagina offra la versione: legge l'ultima pubblicata, entro un'ora (in produzione dal rilascio di Family Manager che toglie `scripts/fetch-agent.mjs`; fino a quel rilascio la pagina in produzione offre la versione scritta lì, e chi ha già l'agente si aggiorna da solo lo stesso). Restano le cose scritte nella sezione *Per il rilascio* della versione, e per un primo numero più alto `AGENT_MAJOR` in `extensions/document-reader/src/endpoint/agent.ts`. Quel repository ha le sue regole (`CLAUDE.md`): ci si lavora da lì, oppure da qui se l'utente lo chiede, dopo averle lette.
 - Nel vault: nella nota `Versioni dell'agente` una riga nella tabella *Le versioni* (numero, data, contenuto in breve); nella nota `Agente dello scanner` la versione pubblicata e la data, in *Prove in locale* o nei *Punti aperti* che la versione chiude.

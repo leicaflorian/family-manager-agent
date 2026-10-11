@@ -23,12 +23,22 @@ WINRES=github.com/tc-hib/go-winres@v0.3.3
 
 export MACOSX_DEPLOYMENT_TARGET=13.0
 mac() { GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 "$@"; }
+intel() { GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 "$@"; }
 windows() { GOOS=windows GOARCH=amd64 CGO_ENABLED=0 "$@"; }
+
+# universal FILE LDFLAGS: the program of the Mac, built for the Apple processors and for the Intel
+# ones and joined in one file, of which macOS runs the half of the computer it is on
+universal() {
+    mac go build -trimpath -ldflags "$2" -o "$1.arm64" .
+    intel go build -trimpath -ldflags "$2" -o "$1.amd64" .
+    lipo -create -output "$1" "$1.arm64" "$1.amd64"
+    rm "$1.arm64" "$1.amd64"
+}
 
 mkdir -p "$OUT"
 
 if [ "${1:-}" = "probe" ]; then
-    mac go build -trimpath -ldflags "-X main.mode=probe" -o "$OUT/scanner-probe" .
+    universal "$OUT/scanner-probe" "-X main.mode=probe"
     windows go build -trimpath -ldflags "-X main.mode=probe" -o "$OUT/scanner-probe.exe" .
     echo "Probes in $OUT/: scanner-probe (Mac) and scanner-probe.exe (Windows)."
     echo "Each writes scanner-probe.txt next to itself, without feeding a sheet."
@@ -37,15 +47,23 @@ fi
 
 echo "== checks"
 mac go vet ./...
+intel go vet ./...
 windows go vet ./...
 # the tests run on the Mac only: of the ones for Windows vet says that they compile. Built for this
 # Mac and not for the oldest macOS of the agent, which only fills the output with linker warnings
 (unset MACOSX_DEPLOYMENT_TARGET; mac go test -race ./...)
+# the Intel half runs on an Apple processor only through Rosetta: without it, it is compiled and
+# not run
+if arch -x86_64 /usr/bin/true 2> /dev/null; then
+    (unset MACOSX_DEPLOYMENT_TARGET; intel go test -race ./...)
+else
+    echo "No Rosetta on this Mac: the tests for the Intel processors did not run."
+fi
 
-echo "== Mac (arm64)"
+echo "== Mac (arm64 and amd64)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-mac go build -trimpath -ldflags "-s -w" -o "$APP/Contents/MacOS/FamilyManagerAgent" .
+universal "$APP/Contents/MacOS/FamilyManagerAgent" "-s -w"
 sed "s/__VERSION__/$VERSION/g" Info.plist > "$APP/Contents/Info.plist"
 
 # the icon of the app, from the one of the agent, in the shape macOS wants (see mac-icon.swift)
@@ -59,7 +77,8 @@ done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$ICONSET" "$OUT/AppIcon.png"
 
-# a local signature, without a certificate: macOS on Apple processors does not run unsigned code
+# a local signature, without a certificate, of both halves: macOS on Apple processors does not run
+# unsigned code
 codesign --force -s - "$APP"
 
 echo "== Windows (amd64)"

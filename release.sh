@@ -7,7 +7,8 @@
 #
 # Needs what build.sh needs, and gh (brew install gh) logged in. Everything must be committed, on
 # main: the tag goes on the commit the zips were built from. At the end it prints the fingerprints
-# of the three files, to write in scripts/fetch-agent.mjs of Family Manager, which downloads them.
+# of the three files. Nothing is left to do in Family Manager: its page offers the last published
+# version, which it reads from version.json of the last release.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -38,5 +39,5 @@ git push origin main "$TAG"
 printf '%s\n' "$NOTES" | gh release create "$TAG" "${FILES[@]}" --title "Family Manager Agent $VERSION" --notes-file -
 
 echo
-echo "Published. In Family Manager, scripts/fetch-agent.mjs: the version $VERSION and"
+echo "Published: Family Manager Agent $VERSION. The fingerprints of the three files:"
 shasum -a 256 "${FILES[@]}" | sed 's|dist/||'

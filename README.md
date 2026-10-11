@@ -1,160 +1,137 @@
 # Family Manager Agent
 
-Il programma che comanda lo scanner attaccato al computer per conto della pagina *Scansiona* di Family Manager. Il browser da solo non può usare il driver di uno scanner: l'agente sì, con quello che il sistema ha già (*Acquisizione Immagine* sul Mac, WIA su Windows).
+The program that drives the scanner connected to a computer on behalf of the *Scansiona* (Scan) page of Family Manager. A browser cannot talk to a scanner driver; the agent can, with what the system already has: Image Capture on macOS, WIA on Windows.
 
-È un programma solo, scritto in Go, per **Mac con processore Apple** e **Windows a 64 bit**. Non gira sul server: si scarica dalla pagina e si apre sul computer.
+It is a single Go program for **Macs** (Apple silicon and Intel, macOS 13 or later) and **64-bit Windows**. It does not run on the server: it is downloaded from the page and opened on the computer. Its interface is in Italian, so menu items and messages are quoted here as they appear.
 
-Fino all'11/10/2026 era la cartella `scanner-agent/` del repository di Family Manager. Ora quel repository non ne ha né i sorgenti né gli zip: la pagina *Scansiona* rimanda ai due zip dell'ultima versione pubblicata qui.
+## What it does
 
-## Cosa fa
+- Starts when the system opens `familymanageragent://open` (the page does it), never at login, and quits after ten minutes without requests.
+- Answers on `http://127.0.0.1:47115`, only from the computer itself and only to the sites the owner has accepted: the first call from a site asks "Permetti a `<sito>` di usare lo scanner?" and the answer is remembered.
+- Lists the scanners the computer sees, USB and network, without opening any. It opens only the one the page picks and lets go of the previous one: opening a network scanner wakes it up.
+- Says what the chosen scanner has (feeder, flatbed, resolutions, colour modes) and scans with the choices of the page: every sheet in the feeder, both sides, or one side at a time from the flatbed. Always A4, one JPEG per side. A resolution the scanner refuses stops the scan with an error.
+- Keeps the scans in a temporary folder, deleted on exit: nothing is left on the computer.
+- Shows an icon while it runs (menu bar on macOS, notification area on Windows) with *Informazioni* and *Esci* (quit). *Informazioni* says which version is running and which sites were accepted or refused. *Cerca aggiornamenti* (check for updates) and *Dimentica i siti accettati* (forget the accepted sites) are buttons of that window on macOS, menu items on Windows.
+- Updates itself from the releases of this repository ([Self-update](#self-update)).
 
-- Parte quando il sistema apre `familymanageragent://open` (lo fa la pagina); non parte da solo all'accensione.
-- Risponde su `http://127.0.0.1:47115`, solo dal computer stesso, e solo ai siti che il proprietario ha accettato: alla prima chiamata di un sito chiede "Permetti a `<sito>` di usare lo scanner?" e ricorda la risposta.
-- Elenca gli scanner che il computer vede, sul cavo e in rete (una stampante multifunzione sul Wi-Fi), senza aprirne nessuno. Apre solo quello che la pagina ha scelto, e lascia quello di prima: aprire uno scanner di rete lo sveglia.
-- Di quello scelto dice da dove legge (caricatore, vetro), le risoluzioni e i colori che ha, e scansiona con le scelte della pagina: dal caricatore tutti i fogli, fronte e retro; dal vetro una facciata per volta. Sempre un A4, un JPEG per facciata, in una cartella temporanea. Una risoluzione che lo scanner rifiuta ferma la scansione con un errore: non ne usa un'altra.
-- Alla pagina di prima, che non sceglie niente, risponde come ha sempre fatto: il primo scanner sul cavo con il caricatore, fronte e retro, colore, 200 punti (su Windows, se il driver non accetta i 200 punti, il foglio arriva alla risoluzione del driver).
-- Si chiude dopo dieci minuti senza richieste. All'uscita cancella la cartella temporanea: sul computer non resta nessuna scansione.
-- Finché è aperto ha un'icona (barra dei menu sul Mac, accanto all'orologio su Windows) con *Informazioni* ed *Esci*. *Informazioni* apre una finestra che dice cos'è l'agente, quale versione è aperta e quali siti sono stati accettati o rifiutati; sul Mac ha anche i pulsanti *Cerca aggiornamenti*, che lascia la finestra aperta, e *Dimentica i siti accettati*. Su Windows la finestra ha solo *OK*, e i due sono voci del menu.
-- Si aggiorna da solo: mentre è aperto cerca una versione più nuova tra le release di questo repository, la scarica, e la mette al suo posto quando si chiude. Lo si può chiedere subito, con *Cerca aggiornamenti* ([Aggiornarsi da solo](#aggiornarsi-da-solo)).
+It knows nothing about Family Manager: no address, no key, no token. The file is uploaded by the page. The only address it calls is the one of this repository's releases on GitHub, and that request carries nothing but the name and version of the agent.
 
-Non conosce Family Manager: nessun indirizzo, nessuna chiave, nessun token. Il file lo carica la pagina. L'unico indirizzo che chiama è quello delle release di questo repository, su GitHub, per cercare gli aggiornamenti: non manda niente, a parte la richiesta.
+## Install
 
-## Installare
+The two zips are in the [releases](https://github.com/leicaflorian/family-manager-agent/releases), and the Scan page links to them. The programs are not signed, so the first time they must be approved by hand.
 
-I due zip sono nelle [release](https://github.com/leicaflorian/family-manager-agent/releases), e la pagina *Scansiona* li fa scaricare. I programmi non sono firmati, quindi la prima volta vanno accettati a mano.
+- **macOS**: open `FamilyManagerAgent-mac.zip`, move *Family Manager Agent* to *Applications* and open it. macOS refuses: *System Settings → Privacy & Security → Open Anyway*.
+- **Windows**: open `FamilyManagerAgent-windows.zip`, then *Family Manager Agent*. On "Windows protected your PC": *More info → Run anyway*. The program copies itself to `%LOCALAPPDATA%\FamilyManagerAgent\` and says so in a window; the zip can be thrown away. If an agent is already running it asks whether to close it (a scan in progress is interrupted) and takes its place.
 
-- **Mac**: aprire `FamilyManagerAgent-mac.zip`, spostare *Family Manager Agent* in *Applicazioni* e aprirlo. macOS lo rifiuta: *Impostazioni di Sistema → Privacy e sicurezza → Apri comunque*.
-- **Windows**: aprire `FamilyManagerAgent-windows.zip` e poi *Family Manager Agent*. Windows mostra "PC protetto": *Ulteriori informazioni → Esegui comunque*. Il programma si copia da solo in `%LOCALAPPDATA%\FamilyManagerAgent\` e lo dice in una finestra, *Installazione riuscita*: lo zip si può buttare. La finestra compare solo aprendo il programma scaricato, non quando l'agente lo avvia la pagina. Se un agente è già aperto, il programma scaricato lo dice e chiede se chiuderlo: con *Sì* lo chiude di forza (una scansione in corso si interrompe) e si installa al suo posto.
+## Self-update
 
-## Aggiornarsi da solo
+Since 1.1.0; from 1.0.0 the update is done by hand, one last time.
 
-Dalla 1.1.0. Chi ha la 1.0.0 scarica la 1.1.0 a mano, un'ultima volta.
+Fifteen seconds after it starts, and then once a day, the agent reads `version.json` of the latest release. If the published version is higher than its own, it downloads the zip for its system, checks its sha256 against the one in `version.json`, and puts the new program in place when it quits. It asks nothing and replaces nothing during a scan. *Cerca aggiornamenti* does the same right away and restarts the agent, and always answers with a window: already up to date, or why it did not install.
 
-1. Quindici secondi dopo l'avvio, e poi una volta al giorno se resta aperto, l'agente legge `version.json` dell'ultima release (`releases/latest/download/version.json`).
-2. Se la versione pubblicata è più alta della sua, scarica lo zip del suo sistema da quella release e ne controlla l'impronta (sha256) con quella scritta in `version.json`. Lo tiene da parte: `~/Library/Caches/FamilyManagerAgent/update/` sul Mac, `%LOCALAPPDATA%\FamilyManagerAgent\update\` su Windows. Nel menu dell'icona compare *Versione X.Y.Z pronta: si installa alla chiusura*.
-3. Quando si chiude (da solo dopo dieci minuti, o con *Esci*) mette il programma nuovo al posto del vecchio. Dall'avvio successivo gira la versione nuova. Non chiede niente e non sostituisce niente durante una scansione.
+What it does not do:
 
-**Subito, con *Cerca aggiornamenti*.** È un pulsante della finestra di *Informazioni* sul Mac, e una voce del menu su Windows. Fa lo stesso controllo senza aspettare: se c'è una versione più nuova la scarica, la installa e riavvia l'agente, senza attendere la chiusura. Quando una versione è già stata scaricata si chiama *Installa adesso la versione X.Y.Z*. Risponde sempre con una finestra: *Questa è già l'ultima versione*, oppure perché non ha installato (manca la connessione, c'è una scansione in corso, la versione ha un primo numero più alto, l'app non è in *Applicazioni*, la sostituzione non è riuscita).
+- **Move to a higher major version by itself** (1.x to 2.0.0): the major changes when the previous page can no longer talk to the agent, so that version comes with the page.
+- **Install a zip whose sha256 differs** from the published one, or a release without checksums (1.0.0).
+- **Update when it cannot be replaced**: on macOS the app must be in a writable folder such as *Applications*. Opened from where it was downloaded, macOS runs it from a read-only copy.
 
-Cosa non fa:
+What it did is in `agent.log`, in the lines starting with `update:`. The checksum protects against a zip broken or changed on the way, not against a release published by the wrong person: whoever can publish a release here decides what runs on the computers that have the agent.
 
-- **Non passa da solo a un primo numero più alto** (dalla 1.x alla 2.0.0): quel numero cambia quando la pagina di prima non riesce più a parlare con l'agente, e la versione nuova arriva insieme alla pagina, che la fa scaricare.
-- **Non installa uno zip con un'impronta diversa** da quella pubblicata, né una release senza impronte (la 1.0.0).
-- **Non si aggiorna se non può essere sostituito**: sul Mac l'app deve stare in una cartella in cui si può scrivere, come *Applicazioni*. Aperta da dove è stata scaricata, senza spostarla, macOS la fa girare da una copia di sola lettura.
+## Build
 
-**Esempio.** Sul Mac c'è la 1.1.0 e viene pubblicata la 1.1.1. Alla prima scansione dopo la pubblicazione l'agente parte, quindici secondi dopo scarica la 1.1.1, e dieci minuti dopo l'ultima richiesta della pagina si chiude e la installa. Alla scansione dopo, la pagina parla con la 1.1.1.
-
-Cosa ha fatto si legge in `agent.log`, nelle righe che cominciano con `update:`. L'impronta protegge da uno zip arrivato rotto o cambiato per strada, non da una release pubblicata da chi non dovrebbe: chi può pubblicare una release in questo repository decide cosa gira sui computer che hanno l'agente.
-
-## Compilare
-
-Da un Mac, con Go (`brew install go`) e gli strumenti da riga di comando di Xcode (`swift` compreso). La prima volta serve la rete: Go scarica le librerie e `go-winres`.
+On a Mac, with Go (`brew install go`) and the Xcode command line tools (`swift` included). The first build needs the network, for the Go modules and `go-winres`.
 
 ```bash
-./build.sh         # i due zip e version.json, in dist/
-./build.sh probe   # solo le prove, in build/: scanner-probe e scanner-probe.exe
+./build.sh         # the two zips and version.json, in dist/
+./build.sh probe   # only the probes, in build/: scanner-probe and scanner-probe.exe
+go test ./...      # only the tests
 ```
 
-La prova non fa passare fogli. Da sola elenca gli scanner, con il loro identificativo, e non ne apre nessuno; con un identificativo (`build/scanner-probe "<id>"`, `scanner-probe.exe "<id>"`) apre quello e dice da dove legge, le risoluzioni e i colori (su Windows, di ogni proprietà del driver, anche i valori che accetta). Scrive tutto anche in `scanner-probe.txt`, accanto a sé.
+`build.sh` checks the code for both systems (`go vet`), runs the tests, builds `Family Manager Agent.app` (signed locally, without a certificate) and `Family Manager Agent.exe`. The Mac program is universal: built for Apple silicon and for Intel, and joined with `lipo`, in the same zip. Then it writes the two zips with `version.json`: the version, the names of the zips and their sha256. `build/` and `dist/` are not versioned.
 
-`build.sh` controlla il codice per i due sistemi (`go vet`), fa girare i test sul Mac, compone `Family Manager Agent.app` con la sua icona e la firma in locale (senza certificato), compila `Family Manager Agent.exe` con la sua, e scrive i due zip con `version.json` (la versione, i nomi dei due zip e le loro impronte, che un agente controlla prima di aggiornarsi). Le cartelle `build/` e `dist/` non sono versionate.
+**The probe** never feeds a sheet. Alone it lists the scanners with their ids and opens none; with an id (`build/scanner-probe "<id>"`) it opens that one and prints its sources, resolutions and colour modes. The output also goes to `scanner-probe.txt`, next to it.
 
-**I test** sono i file `_test.go`, accanto al codice che provano: `go test ./...` li fa girare da soli, e `build.sh` li lancia prima di compilare, quindi con un test che fallisce non si compila e non si pubblica. Non aprono l'agente, non toccano lo scanner e non chiamano la rete: lo scanner e le release sono finti, dentro il test; il server dell'agente è aperto su una porta sua, non sulla `47115`, così un agente aperto sul computer non se ne accorge; e i file (`origins.json`, le facciate, lo zip scaricato, l'app da sostituire) stanno in cartelle temporanee, mai in quelle dell'agente installato. Girano solo sul Mac: di quelli per Windows `go vet` dice che si compilano.
+**The tests** are the `_test.go` files, next to the code they cover: the accepted sites, the requests, the scan session and the update. A failing test stops the build, and so the release. They do not open the agent, touch a scanner or call the network: the scanner and the releases are fakes, the server listens on a port of its own, and the files live in temporary folders. They run on the Mac only, for Apple silicon and, through Rosetta, for Intel; the Windows code is compiled, not run.
 
-| File | Cosa prova |
+**The icon** is `icon.png`, 512 px on a flat background: replace it and rebuild. `mac-icon.swift` redraws it in the shape macOS wants, and `go-winres` puts it in the Windows program. The menu bar icon on macOS is drawn by the code.
+
+## Release
+
+The versions are in [`CHANGELOG.md`](CHANGELOG.md), in Italian: changes are written there as the work goes, under *Non rilasciato*, and the numbering rules are at the top of that file.
+
+1. `./close-version.py X.Y.Z` writes the number to `VERSION` and turns *Non rilasciato* into the section of that version, dated today.
+2. Commit everything on `dev`, the development branch. `main` holds only the published versions.
+3. `git checkout main && git merge --ff-only dev`
+4. `./release.sh` builds, tags the commit `vX.Y.Z`, pushes `main` and creates the GitHub release with the two zips and `version.json`, with the changelog section as notes. It stops when not on `main`, with uncommitted changes, or when the version is already published or has no changelog section.
+5. `git checkout dev`
+
+It needs `gh` (`brew install gh`), logged in, and `python3`.
+
+Nothing has to be done in Family Manager: within an hour the Scan page offers the new version. The agents take it at their next start, so a published version cannot be withdrawn: a fix is a new version.
+
+## Requests
+
+| Request | Answer |
 | --- | --- |
-| `origins_test.go` | I siti accettati: una domanda sola per sito, la risposta tenuta nel file e ritrovata all'avvio dopo, un sito a un indirizzo nuovo (o con un'altra porta) chiesto di nuovo, la risposta che cambia dopo *Dimentica i siti accettati* |
-| `server_test.go` | Le richieste della tabella qui sotto e `guard`: chi viene rifiutato senza domanda (niente `Origin`, un altro `Host`), il sito accettato, quello rifiutato, quello mai visto che aspetta la risposta, `OPTIONS`, le righe `refused:` del log (i nomi delle intestazioni, mai i valori), e quando l'agente può chiudersi da solo; l'elenco degli scanner, che non ne apre nessuno; lo stato e la scansione della pagina che sceglie (`api=2`): nessuno scanner aperto finché non è scelto, cosa ha quello scelto, le scelte che lo scanner non ha rifiutate con `400 settings`; e la pagina di prima che riceve quello di sempre |
-| `scanner_test.go` | La scansione con uno scanner finto (`Session`): le facciate in ordine mentre arrivano, una scansione alla volta, la seconda in coda alla prima, la scansione che si ferma, la cancellazione, e la cartella temporanea che sparisce alla chiusura; le scelte che arrivano allo scanner; la misura dell'A4 in punti; `Capabilities.Has` |
-| `update_test.go` | L'aggiornamento: il confronto delle versioni, cosa viene scaricato e cosa no (primo numero più alto, impronta che manca o non torna, nome dello zip con un percorso), cosa resta nella cartella, e che la richiesta porta solo il nome e la versione dell'agente |
-| `update_darwin_test.go` | La sostituzione dell'app sul Mac, con uno zip fatto da `ditto` come quello di `build.sh`: l'app nuova al posto della vecchia, e la vecchia che resta quando lo zip non contiene l'app |
+| `GET /scanners` | `{ scanners: [{ id, name, connection }] }`, `connection` being `usb` or `network`. Opens no scanner; during a scan it answers with the last list |
+| `GET /status?api=2&scanner=<id>` | `{ version, os, api, scanner }`, `scanner` being `ready`, `empty`, `off` or `opening`. Opens **only** the scanner asked for and lets go of the previous one. Once open, the answer also has `source` (`feeder` or `flatbed`: where it reads from now), `sources`, `resolutions` and `colours` (`colour`, `grey`). `&source=flatbed` moves it to the flatbed; without it, the feeder if there is one. Without `scanner` it opens none and answers `off` |
+| `POST /scan?api=2&scanner=<id>&source=…&resolution=…&colour=…` | `202`: feeds the sheets, or reads the one on the flatbed, after the pages already scanned. `400 settings` if a choice is missing or the scanner does not have it. `409` during a scan |
+| `GET /status`, `POST /scan` without `api=2` | The previous page: `{ version, os, scanner }`, and a scan from the first USB scanner with a feeder, both sides, colour, 200 dpi (on Windows, the resolution of the driver if it refuses 200) |
+| `GET /pages` | `{ session, state, error, message, pages }`: `state` is `idle`, `scanning`, `done` or `error`; `error` is `off`, `empty`, `jam` or `scanner` |
+| `GET /pages/<id>` | The JPEG of one side |
+| `DELETE /pages` | `204`: deletes the pages. `409` during a scan |
 
-**L'icona** è `icon.png`, 512 punti, con lo sfondo di un colore solo. Per cambiarla si sostituisce il file e si ricompila. Dove finisce:
+Everything travels in the URL, without a body. For a page that sends `api=2` the agent never picks the scanner: until the page asks for one, none is opened.
 
-- nell'app del Mac, ridisegnata da `mac-icon.swift` nella forma che macOS vuole (un'icona con un'altra forma macOS 26 la mostra piccola in un riquadro grigio);
-- nel file del programma di Windows, con `go-winres`, che scrive `rsrc_windows_amd64.syso` (non versionato);
-- accanto all'orologio di Windows, perché il programma porta `icon.png` dentro di sé.
+Without the `Origin` header, or with a `Host` other than `127.0.0.1:47115`: `403 forbidden`. A site never seen: `403 origin_pending` and the question on the computer; a refused one: `403 origin_denied`.
 
-Nella barra dei menu del Mac c'è invece un disegno a un colore, fatto dal codice.
+Port `47115` and these requests are what ties the agent to the page: whoever changes them here changes them in the page too (`extensions/document-reader/src/module/scan/agent.ts` in Family Manager) and in the Directus security policy (`CONTENT_SECURITY_POLICY_DIRECTIVES__CONNECT_SRC`).
 
-## Pubblicare una versione
-
-Le versioni e cosa contengono sono in [`CHANGELOG.md`](CHANGELOG.md): quello che cambia si scrive lì mentre si lavora, nella sezione *Non rilasciato*, e i numeri seguono le regole scritte in cima a quel file.
-
-1. `./close-version.py X.Y.Z`, con il numero scelto: lo scrive in `VERSION` e, nel changelog, fa diventare *Non rilasciato* la sezione di quella versione, con la data di oggi. Si ferma se *Non rilasciato* è vuoto o se il numero non è più alto dell'ultimo pubblicato.
-2. Commit di tutto, su `dev`: è il branch su cui si sviluppa. `main` contiene solo le versioni pubblicate.
-3. Portare `dev` in `main`: `git checkout main && git merge --ff-only dev`.
-4. `./release.sh`: compila, mette il tag `vX.Y.Z` sul commit, fa il push di `main` e crea la release su GitHub con i due zip e `version.json`, e come note la sezione della versione nel changelog. Si ferma se non si è su `main`, se c'è qualcosa di non committato, se la versione è già pubblicata o se nel changelog non ha la sua sezione.
-5. Alla fine stampa le impronte (sha256) dei tre file. In Family Manager non c'è niente da fare: entro un'ora la pagina *Scansiona* offre la versione nuova.
-6. Tornare su `dev`: `git checkout dev`.
-
-Serve `gh` (`brew install gh`) con l'accesso fatto, e `python3`, che c'è con gli strumenti di Xcode.
-
-Dal momento in cui la release c'è, gli agenti che si aggiornano da soli la prendono al loro avvio successivo, senza aspettare Family Manager: una versione pubblicata non si ritira, e una correzione è una versione nuova.
-
-## Le richieste
-
-| Richiesta | Cosa risponde |
-| --- | --- |
-| `GET /scanners` | `{ scanners: [{ id, name, connection }] }`, con `connection` `usb` o `network`. Elenca senza aprire nessuno scanner; durante una scansione risponde con l'ultimo elenco |
-| `GET /status?api=2&scanner=<id>` | `{ version, os, api, scanner }`, con `api` 2 e `scanner` uno tra `ready`, `empty`, `off` e `opening` (lo scanner chiesto si sta aprendo). Apre **solo** lo scanner chiesto e lascia quello di prima. Quando è aperto la risposta ha anche `source` (`feeder` o `flatbed`: da dove legge adesso), `sources` (quello che ha), `resolutions` e `colours` (`colour`, `grey`). Con `&source=flatbed` lo mette sul vetro; senza, sul caricatore se c'è. Senza `scanner` non ne apre nessuno e risponde `off` |
-| `POST /scan?api=2&scanner=<id>&source=…&resolution=…&colour=…` | `202`: fa partire i fogli del caricatore, o legge quello sul vetro, in coda alle facciate già arrivate. `400 settings` se manca una scelta o non è tra quelle dello scanner. `409` se una scansione è in corso |
-| `GET /status`, `POST /scan` senza `api=2` | La pagina di prima: `{ version, os, scanner }` con `ready`, `empty`, `off`, e una scansione dal primo scanner sul cavo con il caricatore, a 200 punti e a colori |
-| `GET /pages` | `{ session, state, error, message, pages }`: `state` è `idle`, `scanning`, `done`, `error`; `error` è `off`, `empty`, `jam`, `scanner` |
-| `GET /pages/<id>` | Il JPEG di una facciata |
-| `DELETE /pages` | `204`: cancella le facciate. `409` durante una scansione |
-
-Tutto passa nell'indirizzo, senza corpo. L'agente non sceglie mai lo scanner per la pagina che manda `api=2`: finché la pagina non ne chiede uno non ne apre nessuno.
-
-Senza l'intestazione `Origin`, o con `Host` diverso da `127.0.0.1:47115`: `403 forbidden`. Un sito mai visto: `403 origin_pending` e la domanda sul computer; uno rifiutato: `403 origin_denied`.
-
-La porta `47115` e queste richieste sono quello che lega l'agente alla pagina: chi le cambia qui le cambia anche nella pagina (`extensions/document-reader/src/module/scan/agent.ts` di Family Manager) e nella regola di sicurezza di Directus (`CONTENT_SECURITY_POLICY_DIRECTIVES__CONNECT_SRC`).
-
-## Provare con curl
+## Try it with curl
 
 ```bash
-open "build/Family Manager Agent.app"                    # oppure: open "familymanageragent://open"
-curl -i http://127.0.0.1:47115/status                    # 403: manca il sito che chiama
-curl -i -H 'Origin: http://localhost:8056' http://127.0.0.1:47115/status   # la prima volta: la domanda sul Mac
+open "build/Family Manager Agent.app"                    # or: open "familymanageragent://open"
+curl -i http://127.0.0.1:47115/status                    # 403: no calling site
+curl -i -H 'Origin: http://localhost:8056' http://127.0.0.1:47115/status   # the first time: the question on the Mac
 curl -s -H 'Origin: http://localhost:8056' http://127.0.0.1:47115/pages
-curl -s -H 'Origin: http://localhost:8056' http://127.0.0.1:47115/scanners                       # l'elenco: nessuno scanner aperto
-curl -s -H 'Origin: http://localhost:8056' 'http://127.0.0.1:47115/status?api=2'                 # ancora nessuno
-curl -s -H 'Origin: http://localhost:8056' 'http://127.0.0.1:47115/status?api=2&scanner=<id>'    # apre quello: opening, poi ready o empty
+curl -s -H 'Origin: http://localhost:8056' http://127.0.0.1:47115/scanners                       # the list: no scanner opened
+curl -s -H 'Origin: http://localhost:8056' 'http://127.0.0.1:47115/status?api=2'                 # still none
+curl -s -H 'Origin: http://localhost:8056' 'http://127.0.0.1:47115/status?api=2&scanner=<id>'    # opens that one: opening, then ready or empty
 ```
 
-`POST /scan` fa passare i fogli veri: si prova con un foglio qualunque, e alla fine `DELETE /pages`.
+`POST /scan` feeds real sheets: try it with any sheet, and finish with `DELETE /pages`.
 
-Cosa vede e cosa fa l'agente è in `agent.log`, nella cartella delle impostazioni (`~/Library/Application Support/FamilyManagerAgent/` sul Mac, `%AppData%\FamilyManagerAgent\` su Windows), insieme a `origins.json`, i siti accettati. Una chiamata rifiutata con `forbidden` ci lascia una riga `refused:`, con `Host`, `Origin` e i nomi delle intestazioni così come sono arrivati all'agente: è la prima cosa da leggere quando la pagina dice che l'agente non risponde e l'agente è aperto. Su Windows una risposta di WIA arrivata dopo più di due secondi lascia una riga `status: WIA answered …` (e `WIA: connecting to … took …` per l'apparecchio lento): `GET /status` non la aspetta, e risponde con l'ultima che ha. Sempre su Windows ogni passo di una scansione lascia una riga `scan:` (la richiesta, lo scanner scelto, le impostazioni che il driver ha tenuto, ogni facciata): quando la pagina resta su *Scansione in corso…* e i fogli non partono, l'ultima riga dice dove si è fermata. Per una prova senza far comparire la domanda si aggiunge il sito di prova a `origins.json` prima di aprire l'agente; **non** si cambia `HOME`, perché *Acquisizione Immagine* smette di vedere lo scanner.
+To skip the question, add the test site to `origins.json` before opening the agent. Do **not** change `HOME`: Image Capture stops seeing the scanner.
 
-Su Windows, senza la pagina: `test-windows.cmd`, copiato sul PC accanto al programma. Avvia l'agente, fa passare i fogli del caricatore, scarica le facciate come `pagina-1.jpg`… e scrive `risultato.txt`.
+What the agent sees and does is in `agent.log`, in the settings folder (`~/Library/Application Support/FamilyManagerAgent/` on macOS, `%AppData%\FamilyManagerAgent\` on Windows), next to `origins.json`. A call refused with `forbidden` leaves a `refused:` line: the first thing to read when the page says the agent does not answer and the agent is running. On Windows every step of a scan leaves a `scan:` line, so the last one says where a scan stopped.
 
-## I file
+On Windows, without the page: `test-windows.cmd`, copied to the PC next to the program. It starts the agent, feeds the sheets, downloads the pages as `pagina-1.jpg`… and writes `risultato.txt`.
 
-| File | Cosa contiene |
+## Files
+
+| File | What it holds |
 | --- | --- |
-| `main.go` | L'avvio, l'icona, la chiusura da solo, la pulizia all'uscita |
-| `server.go` | Le risposte e `guard`, che decide chi passa |
-| `origins.go` | I siti accettati |
-| `update.go`, `update_darwin.go`, `update_windows.go` | L'aggiornamento: il controllo, lo zip scaricato e la sua impronta, e la sostituzione del programma alla chiusura, sul Mac e su Windows |
-| `scanner.go` | La parte comune dello scanner: `Driver`, `Session`, le impostazioni fisse |
-| `scanner_darwin.go`, `scanner_darwin.m`, `agent_darwin.h` | Lo scanner sul Mac (`ImageCaptureCore`) |
-| `scanner_windows.go` | Lo scanner su Windows (WIA, con `go-ole`): scritto senza poterlo provare dal Mac |
-| `dialog_*.go`, `dialog_darwin.m` | La domanda e i messaggi |
-| `install_windows.go`, `install_darwin.go` | Su Windows la copia in `%LOCALAPPDATA%\FamilyManagerAgent\`, il collegamento nel registro, la finestra che conferma l'installazione e la chiusura di un agente già aperto |
-| `icon.go`, `icon.png` | L'icona accanto all'orologio di Windows, e il disegno della barra dei menu del Mac |
-| `mac-icon.swift` | L'icona dell'app del Mac, nella forma di macOS |
-| `probe.go` | La prova: cosa il sistema vede dello scanner |
-| `*_test.go` | I test: i siti accettati, le richieste, la scansione con uno scanner finto e l'aggiornamento (vedi *Compilare*) |
-| `Info.plist` | Il pacchetto del Mac: identificativo `it.familymanager.agent`, lo schema del collegamento, nessuna icona nel Dock |
-| `build.sh`, `release.sh`, `VERSION` | La compilazione, la pubblicazione, il numero della versione |
-| `CHANGELOG.md`, `close-version.py` | Le versioni e cosa contengono, e lo script che ne chiude una |
-| `test-windows.cmd` | La prova su Windows senza la pagina |
-| `CLAUDE.md`, `AGENTS.md`, `.claude/` | Le regole per chi lavora qui, persona o agente (i due file sono identici), e la skill `/release` di Claude Code |
+| `main.go` | Start, the icon, quitting by itself, the cleanup on exit |
+| `server.go` | The answers, and `guard`, which decides who gets through |
+| `origins.go` | The accepted sites |
+| `update.go`, `update_darwin.go`, `update_windows.go` | The update: the check, the zip and its checksum, replacing the program on exit |
+| `scanner.go` | The common part of the scanner: `Driver`, `Session`, the fixed settings |
+| `scanner_darwin.go`, `scanner_darwin.m`, `agent_darwin.h` | The scanner on macOS (`ImageCaptureCore`) |
+| `scanner_windows.go` | The scanner on Windows (WIA, with `go-ole`): written on the Mac, where it only compiles, and tried on the PC |
+| `dialog_*.go`, `dialog_darwin.m` | The question and the messages |
+| `install_windows.go`, `install_darwin.go` | On Windows: the copy to `%LOCALAPPDATA%`, the link in the registry, closing an agent already running |
+| `icon.go`, `icon.png`, `mac-icon.swift` | The icons |
+| `probe.go` | The probe: what the system sees of the scanner |
+| `*_test.go` | The tests (see [Build](#build)) |
+| `Info.plist` | The macOS bundle: identifier `it.familymanager.agent`, the URL scheme, no Dock icon |
+| `build.sh`, `release.sh`, `close-version.py`, `VERSION`, `CHANGELOG.md` | Building, releasing, the version number and what each version holds |
+| `test-windows.cmd` | The test on Windows without the page |
+| `CLAUDE.md`, `AGENTS.md`, `.claude/` | The rules for whoever works here, person or agent (the two files are identical), and the Claude Code skills |
 
-## Cose ancora da provare
+## Still to test
 
-- La scansione vera dalla pagina su Windows, e quella con le scelte sui due sistemi: un'altra risoluzione, il grigio, il vetro, uno scanner di rete.
-- Tutta la parte di Windows: lo scanner (WIA), l'icona del programma e quella accanto all'orologio, la finestra *Installazione riuscita*, e la chiusura dell'agente già aperto quando si apre il programma scaricato.
-- Safari: la pagina è in `https` e l'agente in `http` su `127.0.0.1`.
-- Il riavvio dell'agente dopo un aggiornamento chiesto con *Cerca aggiornamenti*, con la finestra di *Informazioni* aperta.
-- L'aggiornamento con l'app dentro *Applicazioni*: è stato provato con l'app in un'altra cartella, e macOS può impedire a un programma di modificare le app (*Privacy e sicurezza → Gestione app*). E l'aggiornamento su Windows.
+Tried by the owner: the scan from the page on macOS (an Intel Mac included, and Safari) and on Windows, where 1.2.1 works as a whole.
+
+- On Windows, what 1.2.1 does not have: the choices of the page (another scanner, resolution, grey, the flatbed), network scanners left alone, the scan area that follows the resolution of the driver, the `scan:` lines of the log.
+- Restarting after *Cerca aggiornamenti* with the *Informazioni* window open.
+- The update with the app in *Applications*: it was tried from another folder, and macOS can stop a program from modifying apps (*Privacy & Security → App Management*).

@@ -14,6 +14,10 @@ Per pubblicare, `./close-version.py X.Y.Z` chiude la versione (il numero lo sceg
 
 ## [Non rilasciato]
 
+Niente ancora.
+
+## [1.3.0] - 2026-10-11
+
 ### Correzioni
 
 - **Su Windows l'agente lascia stare gli scanner di rete**, come sul Mac: guarda solo quelli attaccati al computer. Prima, a ogni domanda sullo stato e a ogni scansione, si collegava a tutti gli scanner che Windows elenca, uno dopo l'altro, finché ne trovava uno con il caricatore: su un PC con una stampante multifunzione sul Wi-Fi, che Windows elenca due volte e prima dello scanner, passava ogni volta da lì, la svegliava, e aspettava la sua risposta. È il motivo per cui Windows risultava lento sullo scanner. Scritto senza poterlo provare.
@@ -27,6 +31,7 @@ Per pubblicare, `./close-version.py X.Y.Z` chiude la versione (il numero lo sceg
 - **Una risoluzione che lo scanner non ha, o rifiuta, ferma la scansione** con un errore che dice quale: l'agente non ne usa più un'altra al suo posto. Sul Mac prima prendeva la più vicina sopra.
 - **Con la pagina di prima non cambia niente**: a una richiesta senza `api=2` l'agente risponde come ha sempre fatto, con il primo scanner sul cavo che ha il caricatore, a 200 punti e a colori. Sul Mac però lo apre alla prima richiesta della pagina, non più all'avvio.
 - **La prova (`scanner-probe`) elenca gli scanner senza aprirne nessuno**, anche quelli di rete, ognuno con il suo identificativo; con un identificativo apre quello e dice cosa ha. Su Windows di ogni proprietà del driver scrive anche i valori che accetta.
+- **L'agente gira anche sui Mac con processore Intel**, da macOS 13 in su. L'app del Mac è una sola per i due processori, nello stesso `FamilyManagerAgent-mac.zip`, che pesa il doppio (circa 6 MB): chi ha già l'agente la riceve con l'aggiornamento, senza fare niente. Provato dal proprietario su un Mac Intel.
 - **Su Windows `agent.log` dice a che punto è una scansione**: ogni passo lascia una riga `scan:` (la richiesta, l'attesa del thread di WIA, lo scanner scelto e in quanto tempo si è collegato, le impostazioni che il driver ha tenuto (risoluzione e area comprese), come il caricatore tiene il foglio, ogni facciata con il suo tempo e la sua misura, la fine). Di un valore rifiutato dal driver (`WIA property … refused`) scrive anche il codice dell'errore, il valore che resta e quelli che il driver accetta. Prima, tra `POST /scan` e la prima facciata l'agente non scriveva niente: una scansione che non parte lasciava la pagina su *Scansione in corso…* e il log vuoto, come è successo l'11/10/2026 sul PC. L'ultima riga dice dove si è fermata. Scritto senza poterlo provare.
 
 La parte di Windows di queste novità è scritta senza poterla provare: compila, e si prova sul PC.
@@ -38,6 +43,9 @@ La parte di Windows di queste novità è scritta senza poterla provare: compila,
 ### Strumenti
 
 - **I primi test automatici**, per i siti accettati (`origins.go`), le richieste e chi può farle (`server.go`), la scansione con uno scanner finto (`scanner.go`) e l'aggiornamento (`update.go`, con la sostituzione dell'app sul Mac): sono i file `_test.go`, accanto al codice. `build.sh` li fa girare prima di compilare, quindi `release.sh` non pubblica se uno fallisce. Non aprono l'agente, non toccano lo scanner e non chiamano la rete. Per poterli scrivere, `Updater` e `Origins` ricevono l'indirizzo delle release, la cartella dello zip, il programma da sostituire e il file delle risposte, invece di calcolarli dove servono: l'agente fa quello che faceva.
+- **`build.sh` compila il programma del Mac due volte**, per i processori Apple e per quelli Intel, e unisce le due parti con `lipo`; anche la prova (`scanner-probe`) è per tutti e due. Controlla (`go vet`) anche la parte per Intel, e ne fa girare i test attraverso Rosetta, se il Mac ce l'ha.
+- **Il `README.md` è in inglese**, e più corto: i dettagli (le righe del log, cosa prova ogni file di test) restano nelle note.
+- **`release.sh` e le skill `/release` e `/feature-analysis` non rimandano più a `scripts/fetch-agent.mjs`** di Family Manager, che non c'è più: pubblicare basta. La skill `/release` guarda anche se è aperto l'agente compilato in `build/`, che `build.sh` cancella e rifà.
 
 ## [1.2.1] - 2026-10-11
 
@@ -98,7 +106,8 @@ Prima versione pubblicata da questo repository: fino a questo giorno l'agente er
 - `build.sh` compila i due programmi dal Mac e scrive i due zip con `version.json`; `release.sh` li pubblica come release di GitHub.
 - La prova (`./build.sh probe`) dice cosa il sistema vede dello scanner, senza far passare fogli; `test-windows.cmd` prova l'agente su Windows senza la pagina.
 
-[Non rilasciato]: https://github.com/leicaflorian/family-manager-agent/compare/v1.2.1...HEAD
+[Non rilasciato]: https://github.com/leicaflorian/family-manager-agent/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/leicaflorian/family-manager-agent/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/leicaflorian/family-manager-agent/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/leicaflorian/family-manager-agent/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/leicaflorian/family-manager-agent/compare/v1.0.0...v1.1.0

@@ -8,7 +8,7 @@ Prima di scrivere si guarda com'è oggi la cosa, senza cambiare niente (codice, 
 
 1. **La nota dell'agente**, `Projects/Family Manager Agent/02 - Documentazione tecnica/Agente dello scanner.md`: il codice file per file, le richieste, chi può chiamare, quando parte e si chiude, lo scanner sul Mac e su Windows, i punti aperti. È lunga: prima i titoli, poi le sezioni che la voce tocca. Se la voce riguarda come si compila, si pubblica o si installa, anche `How To/Compilare e installare l'agente dello scanner.md`.
 2. **Cosa vede chi lo usa**: `Projects/Family Manager/01 - Documentazione funzionale/Funzioni/Importazione dei documenti.md`, solo la sezione *Dallo scanner di casa*.
-3. **Il codice**, solo per quello che la nota non dice o per controllare una regola su cui la proposta si appoggia: il file che la nota indica (tabella *I file* del `README.md`), nel punto che serve. Niente esplorazioni larghe.
+3. **Il codice**, solo per quello che la nota non dice o per controllare una regola su cui la proposta si appoggia: il file che la nota indica (tabella *Files* del `README.md`), nel punto che serve. Niente esplorazioni larghe.
 4. **La pagina**, solo se la voce cambia quello che la lega all'agente (porta, richieste, versione): la scheda `Projects/Family Manager/02 - Documentazione tecnica/Estensioni/document-reader.md`, e `extensions/document-reader/src/module/scan/agent.ts` in `~/Dev/family-manager-cms`.
 5. **Altre voci** che toccano lo stesso punto: si cercano per parola chiave nei due ToDo (`Projects/Family Manager Agent/ToDo` e `Projects/Family Manager/ToDo`, con le loro `_Done`; `grep -rl`), e si legge solo quello che la ricerca trova. Vanno collegate (con il percorso) o non rifatte.
 
