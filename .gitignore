@@ -1,0 +1,5 @@
+# what build.sh writes: the programs, the zips to publish, the icon of the program for Windows
+build/
+dist/
+*.syso
+.DS_Store

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Family Manager Agent</string>
+	<key>CFBundleDisplayName</key>
+	<string>Family Manager Agent</string>
+	<key>CFBundleIdentifier</key>
+	<string>it.familymanager.agent</string>
+	<key>CFBundleExecutable</key>
+	<string>FamilyManagerAgent</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>__VERSION__</string>
+	<key>CFBundleVersion</key>
+	<string>__VERSION__</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<!-- no window and no icon in the Dock: only the icon in the menu bar -->
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<!-- the link the page opens to start the agent: familymanageragent://open -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>it.familymanager.agent</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>familymanageragent</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

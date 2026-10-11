@@ -1,0 +1,2 @@
+# a batch file with LF line endings does not run properly on Windows
+*.cmd text eol=crlf
