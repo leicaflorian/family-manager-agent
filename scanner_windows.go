@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"time"
 
 	ole "github.com/go-ole/go-ole"
 	"github.com/go-ole/go-ole/oleutil"
@@ -53,14 +55,31 @@ const (
 	wiaCoverOpen     = 0x80210016
 )
 
+// How old the answer of WIA about the scanner may be before Status asks again, and from how long
+// an answer of WIA is written in the log as slow.
+const (
+	statusAge = 3 * time.Second
+	slowWIA   = 2 * time.Second
+)
+
 // windowsDriver sends every call to WIA from one thread: the objects of WIA belong to the thread
 // that created them.
 type windowsDriver struct {
 	calls chan func()
+
+	// What WIA last said of the scanner. Asking it can take longer than the page waits for an
+	// answer (on 11/10/2026 the page gave up after its 12 seconds), so Status answers with this
+	// and has WIA asked again behind it.
+	mu     sync.Mutex
+	state  string
+	asked  time.Time     // when WIA last answered
+	asking bool          // a question to WIA is on its way
+	first  chan struct{} // closed at the first answer of WIA
+	once   sync.Once
 }
 
 func newDriver() Driver {
-	driver := &windowsDriver{calls: make(chan func())}
+	driver := &windowsDriver{calls: make(chan func()), state: ScannerOff, first: make(chan struct{})}
 	go func() {
 		runtime.LockOSThread()
 		if err := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED); err != nil {
@@ -93,7 +112,33 @@ func (d *windowsDriver) do(call func()) (err error) {
 	return err
 }
 
+// Status answers with what WIA last said, and has it asked again when that is old. It waits only
+// for the first answer, and not longer than openingTime: after that the scanner counts as off
+// until WIA says otherwise. The probe waits as long as it takes.
 func (d *windowsDriver) Status() string {
+	d.mu.Lock()
+	if !d.asking && time.Since(d.asked) > statusAge {
+		d.asking = true
+		go d.refresh()
+	}
+	d.mu.Unlock()
+
+	if probing {
+		<-d.first
+	} else {
+		select {
+		case <-d.first:
+		case <-time.After(openingTime):
+		}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.state
+}
+
+// refresh asks WIA how the scanner is and keeps the answer for Status.
+func (d *windowsDriver) refresh() {
+	started := time.Now()
 	status := ScannerOff
 	err := d.do(func() {
 		device := feederDevice()
@@ -109,10 +154,23 @@ func (d *windowsDriver) Status() string {
 	if err != nil {
 		logf("status: %v", err)
 	}
-	return status
+	// the time spent waiting for the thread of WIA counts too: it is what the page waited
+	if took := time.Since(started); took > slowWIA {
+		logf("status: WIA answered %q after %s", status, took.Round(100*time.Millisecond))
+	}
+	d.mu.Lock()
+	d.state, d.asked, d.asking = status, time.Now(), false
+	d.mu.Unlock()
+	d.once.Do(func() { close(d.first) })
 }
 
 func (d *windowsDriver) Scan(dir string, page func(path string)) *ScanError {
+	// the feeder is no longer as WIA said: the next Status has it asked again
+	defer func() {
+		d.mu.Lock()
+		d.asked = time.Time{}
+		d.mu.Unlock()
+	}()
 	var result *ScanError
 	err := d.do(func() { result = scan(dir, page) })
 	if err != nil {
@@ -226,7 +284,11 @@ func feederDevice() *ole.IDispatch {
 		if get(info, "Type").Val != wiaScanner {
 			return false
 		}
+		started := time.Now()
 		connected, err := call(info, "Connect")
+		if took := time.Since(started); took > slowWIA {
+			logf("WIA: connecting to %s took %s", get(info, "DeviceID").ToString(), took.Round(100*time.Millisecond))
+		}
 		if err != nil {
 			return false
 		}

@@ -16,6 +16,12 @@ Per pubblicare, `./close-version.py X.Y.Z` chiude la versione (il numero lo sceg
 
 Niente ancora.
 
+## [1.2.1] - 2026-10-11
+
+### Correzioni
+
+- **Su Windows la pagina non dice più che l'agente non risponde quando Windows è lento a rispondere sullo scanner**: `GET /status` chiedeva lo stato a WIA a ogni richiesta e aspettava la risposta, che su un PC è arrivata dopo più dei 12 secondi che la pagina aspetta. Ora risponde subito con l'ultima risposta di WIA, e intanto la fa richiedere (non più spesso di ogni tre secondi). Solo la prima volta aspetta, al massimo sei secondi: se WIA non ha ancora risposto lo scanner risulta spento, e la pagina si corregge da sola quando la risposta arriva. In `agent.log` una risposta di WIA arrivata dopo più di due secondi lascia una riga (`status: WIA answered … after …`, e `WIA: connecting to … took …` per l'apparecchio lento). Scritto senza poterlo provare.
+
 ## [1.2.0] - 2026-10-11
 
 ### Novità
@@ -69,7 +75,8 @@ Prima versione pubblicata da questo repository: fino a questo giorno l'agente er
 - `build.sh` compila i due programmi dal Mac e scrive i due zip con `version.json`; `release.sh` li pubblica come release di GitHub.
 - La prova (`./build.sh probe`) dice cosa il sistema vede dello scanner, senza far passare fogli; `test-windows.cmd` prova l'agente su Windows senza la pagina.
 
-[Non rilasciato]: https://github.com/leicaflorian/family-manager-agent/compare/v1.2.0...HEAD
+[Non rilasciato]: https://github.com/leicaflorian/family-manager-agent/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/leicaflorian/family-manager-agent/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/leicaflorian/family-manager-agent/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/leicaflorian/family-manager-agent/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/leicaflorian/family-manager-agent/releases/tag/v1.0.0

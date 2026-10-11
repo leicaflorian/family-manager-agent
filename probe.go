@@ -8,9 +8,14 @@ import (
 	"time"
 )
 
+// probing is true in the probe, which waits for the scanner as long as it takes: nobody is
+// waiting for it as the page waits for the agent.
+var probing bool
+
 // probe writes what the system sees of the scanner, without feeding a sheet: on the screen and in
 // scanner-probe.txt, next to the program. It is the first thing to run on a computer never tried.
 func probe() {
+	probing = true
 	driver := newDriver()
 	settle()
 	text := fmt.Sprintf("Family Manager Agent %s, probe of %s\n%s/%s\n\n%s\nstatus: %s\n",
