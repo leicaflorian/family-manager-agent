@@ -98,6 +98,7 @@ Su Windows, senza la pagina: `test-windows.cmd`, copiato sul PC accanto al progr
 | `Info.plist` | Il pacchetto del Mac: identificativo `it.familymanager.agent`, lo schema del collegamento, nessuna icona nel Dock |
 | `build.sh`, `release.sh`, `VERSION` | La compilazione, la pubblicazione, il numero della versione |
 | `test-windows.cmd` | La prova su Windows senza la pagina |
+| `CLAUDE.md`, `AGENTS.md`, `.claude/` | Le regole per chi lavora qui, persona o agente (i due file sono identici), e la skill `/release` di Claude Code |
 
 ## Cose ancora da provare
 

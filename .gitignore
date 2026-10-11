@@ -4,3 +4,5 @@ dist/
 *.syso
 .DS_Store
 .idea/
+# the personal settings of Claude Code: paths of this computer
+.claude/settings.local.json
