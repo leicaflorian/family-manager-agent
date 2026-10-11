@@ -23,6 +23,10 @@ Per pubblicare, `./close-version.py X.Y.Z` chiude la versione (il numero lo sceg
 
 - **Su Windows `agent.log` dice a che punto è una scansione**: ogni passo lascia una riga `scan:` (la richiesta, l'attesa del thread di WIA, lo scanner scelto e in quanto tempo si è collegato, le impostazioni che il driver ha tenuto (risoluzione e area comprese), come il caricatore tiene il foglio, ogni facciata con il suo tempo e la sua misura, la fine). Di un valore rifiutato dal driver (`WIA property … refused`) scrive anche il codice dell'errore, il valore che resta e quelli che il driver accetta. Prima, tra `POST /scan` e la prima facciata l'agente non scriveva niente: una scansione che non parte lasciava la pagina su *Scansione in corso…* e il log vuoto, come è successo l'11/10/2026 sul PC. L'ultima riga dice dove si è fermata. Scritto senza poterlo provare.
 
+### Strumenti
+
+- **I primi test automatici**, per i siti accettati (`origins.go`), le richieste e chi può farle (`server.go`), la scansione con uno scanner finto (`scanner.go`) e l'aggiornamento (`update.go`, con la sostituzione dell'app sul Mac): sono i file `_test.go`, accanto al codice. `build.sh` li fa girare prima di compilare, quindi `release.sh` non pubblica se uno fallisce. Non aprono l'agente, non toccano lo scanner e non chiamano la rete. Per poterli scrivere, `Updater` e `Origins` ricevono l'indirizzo delle release, la cartella dello zip, il programma da sostituire e il file delle risposte, invece di calcolarli dove servono: l'agente fa quello che faceva.
+
 ## [1.2.1] - 2026-10-11
 
 ### Correzioni

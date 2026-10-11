@@ -38,8 +38,13 @@ func configDir() string {
 }
 
 func LoadOrigins(ask func(origin string) bool) *Origins {
+	return loadOrigins(filepath.Join(configDir(), "origins.json"), ask)
+}
+
+// loadOrigins reads the answers kept in a file: the one of the settings folder, another in a test.
+func loadOrigins(path string, ask func(origin string) bool) *Origins {
 	origins := &Origins{
-		path:    filepath.Join(configDir(), "origins.json"),
+		path:    path,
 		answers: map[string]bool{},
 		asking:  map[string]bool{},
 		ask:     ask,

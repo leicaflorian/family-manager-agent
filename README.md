@@ -54,7 +54,17 @@ Da un Mac, con Go (`brew install go`) e gli strumenti da riga di comando di Xcod
 ./build.sh probe   # solo le prove, in build/: scanner-probe e scanner-probe.exe
 ```
 
-`build.sh` controlla il codice per i due sistemi (`go vet`), compone `Family Manager Agent.app` con la sua icona e la firma in locale (senza certificato), compila `Family Manager Agent.exe` con la sua, e scrive i due zip con `version.json` (la versione, i nomi dei due zip e le loro impronte, che un agente controlla prima di aggiornarsi). Le cartelle `build/` e `dist/` non sono versionate.
+`build.sh` controlla il codice per i due sistemi (`go vet`), fa girare i test sul Mac, compone `Family Manager Agent.app` con la sua icona e la firma in locale (senza certificato), compila `Family Manager Agent.exe` con la sua, e scrive i due zip con `version.json` (la versione, i nomi dei due zip e le loro impronte, che un agente controlla prima di aggiornarsi). Le cartelle `build/` e `dist/` non sono versionate.
+
+**I test** sono i file `_test.go`, accanto al codice che provano: `go test ./...` li fa girare da soli, e `build.sh` li lancia prima di compilare, quindi con un test che fallisce non si compila e non si pubblica. Non aprono l'agente, non toccano lo scanner e non chiamano la rete: lo scanner e le release sono finti, dentro il test; il server dell'agente è aperto su una porta sua, non sulla `47115`, così un agente aperto sul computer non se ne accorge; e i file (`origins.json`, le facciate, lo zip scaricato, l'app da sostituire) stanno in cartelle temporanee, mai in quelle dell'agente installato. Girano solo sul Mac: di quelli per Windows `go vet` dice che si compilano.
+
+| File | Cosa prova |
+| --- | --- |
+| `origins_test.go` | I siti accettati: una domanda sola per sito, la risposta tenuta nel file e ritrovata all'avvio dopo, un sito a un indirizzo nuovo (o con un'altra porta) chiesto di nuovo, la risposta che cambia dopo *Dimentica i siti accettati* |
+| `server_test.go` | Le richieste della tabella qui sotto e `guard`: chi viene rifiutato senza domanda (niente `Origin`, un altro `Host`), il sito accettato, quello rifiutato, quello mai visto che aspetta la risposta, `OPTIONS`, le righe `refused:` del log (i nomi delle intestazioni, mai i valori), e quando l'agente può chiudersi da solo |
+| `scanner_test.go` | La scansione con uno scanner finto (`Session`): le facciate in ordine mentre arrivano, una scansione alla volta, la seconda in coda alla prima, la scansione che si ferma, la cancellazione, e la cartella temporanea che sparisce alla chiusura |
+| `update_test.go` | L'aggiornamento: il confronto delle versioni, cosa viene scaricato e cosa no (primo numero più alto, impronta che manca o non torna, nome dello zip con un percorso), cosa resta nella cartella, e che la richiesta porta solo il nome e la versione dell'agente |
+| `update_darwin_test.go` | La sostituzione dell'app sul Mac, con uno zip fatto da `ditto` come quello di `build.sh`: l'app nuova al posto della vecchia, e la vecchia che resta quando lo zip non contiene l'app |
 
 **L'icona** è `icon.png`, 512 punti, con lo sfondo di un colore solo. Per cambiarla si sostituisce il file e si ricompila. Dove finisce:
 
@@ -124,6 +134,7 @@ Su Windows, senza la pagina: `test-windows.cmd`, copiato sul PC accanto al progr
 | `icon.go`, `icon.png` | L'icona accanto all'orologio di Windows, e il disegno della barra dei menu del Mac |
 | `mac-icon.swift` | L'icona dell'app del Mac, nella forma di macOS |
 | `probe.go` | La prova: cosa il sistema vede dello scanner |
+| `*_test.go` | I test: i siti accettati, le richieste, la scansione con uno scanner finto e l'aggiornamento (vedi *Compilare*) |
 | `Info.plist` | Il pacchetto del Mac: identificativo `it.familymanager.agent`, lo schema del collegamento, nessuna icona nel Dock |
 | `build.sh`, `release.sh`, `VERSION` | La compilazione, la pubblicazione, il numero della versione |
 | `CHANGELOG.md`, `close-version.py` | Le versioni e cosa contengono, e lo script che ne chiude una |

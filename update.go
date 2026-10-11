@@ -60,10 +60,15 @@ type Updater struct {
 	version  string // the version waiting in the zip, "" when there is none
 	zip      string
 	found    func(version string)
+	// where the releases are, the folder the zip waits in and the program to replace: the ones of
+	// this agent, others in a test
+	source string
+	dir    string
+	target func() string
 }
 
 func NewUpdater(found func(version string)) *Updater {
-	return &Updater{found: found}
+	return &Updater{found: found, source: updateSource, dir: updateDir(), target: updateTarget}
 }
 
 func updateDir() string {
@@ -98,11 +103,11 @@ func (u *Updater) Run() {
 func (u *Updater) Check() (int, string, error) {
 	u.checking.Lock()
 	defer u.checking.Unlock()
-	if updateTarget() == "" {
+	if u.target() == "" {
 		return updateNone, "", errFixed
 	}
 	var latest manifest
-	body, err := fetch(updateSource+"/latest/download/version.json", manifestLimit)
+	body, err := fetch(u.source+"/latest/download/version.json", manifestLimit)
 	if err != nil {
 		return updateNone, "", err
 	}
@@ -143,7 +148,7 @@ func (u *Updater) download(latest manifest) error {
 		return fmt.Errorf("%s: no fingerprint for %s, not installed", latest.Version, systemName())
 	}
 
-	dir := updateDir()
+	dir := u.dir
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -157,7 +162,7 @@ func (u *Updater) download(latest manifest) error {
 		}
 	}
 	if fingerprintOf(zip) != fingerprint {
-		content, err := fetch(updateSource+"/download/v"+latest.Version+"/"+name, zipLimit)
+		content, err := fetch(u.source+"/download/v"+latest.Version+"/"+name, zipLimit)
 		if err != nil {
 			return err
 		}
@@ -191,7 +196,7 @@ func (u *Updater) Install() (string, error) {
 	if version == "" {
 		return "", nil
 	}
-	target := updateTarget()
+	target := u.target()
 	if err := replaceProgram(zip, target); err != nil {
 		logf("update: %s not installed: %v", version, err)
 		return version, err
@@ -202,7 +207,7 @@ func (u *Updater) Install() (string, error) {
 }
 
 func fetch(address string, limit int64) ([]byte, error) {
-	secure := strings.HasPrefix(updateSource, "https://")
+	secure := strings.HasPrefix(address, "https://")
 	client := &http.Client{
 		Timeout: 5 * time.Minute,
 		CheckRedirect: func(request *http.Request, via []*http.Request) error {

@@ -38,6 +38,9 @@ fi
 echo "== checks"
 mac go vet ./...
 windows go vet ./...
+# the tests run on the Mac only: of the ones for Windows vet says that they compile. Built for this
+# Mac and not for the oldest macOS of the agent, which only fills the output with linker warnings
+(unset MACOSX_DEPLOYMENT_TARGET; mac go test -race ./...)
 
 echo "== Mac (arm64)"
 rm -rf "$APP"
