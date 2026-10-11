@@ -12,8 +12,8 @@ Fino all'11/10/2026 era la cartella `scanner-agent/` del repository di Family Ma
 - Risponde su `http://127.0.0.1:47115`, solo dal computer stesso, e solo ai siti che il proprietario ha accettato: alla prima chiamata di un sito chiede "Permetti a `<sito>` di usare lo scanner?" e ricorda la risposta.
 - Fa passare i fogli del caricatore: fronte e retro, colore, 200 punti, A4, un JPEG per facciata, in una cartella temporanea.
 - Si chiude dopo dieci minuti senza richieste. All'uscita cancella la cartella temporanea: sul computer non resta nessuna scansione.
-- Finché è aperto ha un'icona (barra dei menu sul Mac, accanto all'orologio su Windows) con *Cerca aggiornamenti*, *Dimentica i siti accettati* ed *Esci*.
-- Si aggiorna da solo: mentre è aperto cerca una versione più nuova tra le release di questo repository, la scarica, e la mette al suo posto quando si chiude. Dal menu lo si può chiedere subito ([Aggiornarsi da solo](#aggiornarsi-da-solo)).
+- Finché è aperto ha un'icona (barra dei menu sul Mac, accanto all'orologio su Windows) con *Informazioni* ed *Esci*. *Informazioni* apre una finestra che dice cos'è l'agente, quale versione è aperta e quali siti sono stati accettati o rifiutati; sul Mac ha anche i pulsanti *Cerca aggiornamenti*, che lascia la finestra aperta, e *Dimentica i siti accettati*. Su Windows la finestra ha solo *OK*, e i due sono voci del menu.
+- Si aggiorna da solo: mentre è aperto cerca una versione più nuova tra le release di questo repository, la scarica, e la mette al suo posto quando si chiude. Lo si può chiedere subito, con *Cerca aggiornamenti* ([Aggiornarsi da solo](#aggiornarsi-da-solo)).
 
 Non conosce Family Manager: nessun indirizzo, nessuna chiave, nessun token. Il file lo carica la pagina. L'unico indirizzo che chiama è quello delle release di questo repository, su GitHub, per cercare gli aggiornamenti: non manda niente, a parte la richiesta.
 
@@ -32,7 +32,7 @@ Dalla 1.1.0. Chi ha la 1.0.0 scarica la 1.1.0 a mano, un'ultima volta.
 2. Se la versione pubblicata è più alta della sua, scarica lo zip del suo sistema da quella release e ne controlla l'impronta (sha256) con quella scritta in `version.json`. Lo tiene da parte: `~/Library/Caches/FamilyManagerAgent/update/` sul Mac, `%LOCALAPPDATA%\FamilyManagerAgent\update\` su Windows. Nel menu dell'icona compare *Versione X.Y.Z pronta: si installa alla chiusura*.
 3. Quando si chiude (da solo dopo dieci minuti, o con *Esci*) mette il programma nuovo al posto del vecchio. Dall'avvio successivo gira la versione nuova. Non chiede niente e non sostituisce niente durante una scansione.
 
-**Dal menu, subito.** *Cerca aggiornamenti* fa lo stesso controllo senza aspettare: se c'è una versione più nuova la scarica, la installa e riavvia l'agente, senza attendere la chiusura. Quando una versione è già stata scaricata la voce diventa *Installa adesso la versione X.Y.Z*. Risponde sempre con una finestra: *Questa è già l'ultima versione*, oppure perché non ha installato (manca la connessione, c'è una scansione in corso, la versione ha un primo numero più alto, l'app non è in *Applicazioni*, la sostituzione non è riuscita).
+**Subito, con *Cerca aggiornamenti*.** È un pulsante della finestra di *Informazioni* sul Mac, e una voce del menu su Windows. Fa lo stesso controllo senza aspettare: se c'è una versione più nuova la scarica, la installa e riavvia l'agente, senza attendere la chiusura. Quando una versione è già stata scaricata si chiama *Installa adesso la versione X.Y.Z*. Risponde sempre con una finestra: *Questa è già l'ultima versione*, oppure perché non ha installato (manca la connessione, c'è una scansione in corso, la versione ha un primo numero più alto, l'app non è in *Applicazioni*, la sostituzione non è riuscita).
 
 Cosa non fa:
 
@@ -134,5 +134,5 @@ Su Windows, senza la pagina: `test-windows.cmd`, copiato sul PC accanto al progr
 - La scansione vera dalla pagina, sul Mac e su Windows.
 - Tutta la parte di Windows: lo scanner (WIA), l'icona del programma e quella accanto all'orologio.
 - Safari: la pagina è in `https` e l'agente in `http` su `127.0.0.1`.
-- La voce *Cerca aggiornamenti* con un clic vero: le finestre e il riavvio dell'agente.
+- Il riavvio dell'agente dopo un aggiornamento chiesto con *Cerca aggiornamenti*, con la finestra di *Informazioni* aperta.
 - L'aggiornamento con l'app dentro *Applicazioni*: è stato provato con l'app in un'altra cartella, e macOS può impedire a un programma di modificare le app (*Privacy e sicurezza → Gestione app*). E l'aggiornamento su Windows.

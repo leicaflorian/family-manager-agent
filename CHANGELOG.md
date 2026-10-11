@@ -14,7 +14,14 @@ Per pubblicare, `./close-version.py X.Y.Z` chiude la versione (il numero lo sceg
 
 ## [Non rilasciato]
 
-Niente ancora.
+### Novità
+
+- **Informazioni, dal menu dell'icona**: apre una finestra che dice cos'è l'agente (comanda lo scanner del computer per la pagina *Scansiona*, risponde solo ai siti accettati, si chiude da solo e non lascia scansioni), quale versione è aperta, e quali siti sono stati accettati o rifiutati.
+- **Sul Mac *Cerca aggiornamenti* e *Dimentica i siti accettati* sono pulsanti di quella finestra**, e non più voci del menu, dove restano *Informazioni* ed *Esci*. *Cerca aggiornamenti* lascia la finestra aperta, e la risposta arriva in una finestra sopra; dopo *Dimentica i siti accettati* la finestra si riapre con l'elenco vuoto. Su Windows le due voci restano nel menu, perché lì la finestra ha solo *OK*; la parte di Windows è scritta senza poterla provare.
+
+### Correzioni
+
+- **Sul Mac l'agente chiude le sue finestre prima di uscire**: con una finestra aperta (*Informazioni*, un messaggio, la domanda "Permetti a…"), *Esci*, la chiusura dopo dieci minuti e il riavvio dopo un aggiornamento chiudono anche quella. Una domanda chiusa così non conta come risposta: il sito verrà chiesto di nuovo.
 
 ## [1.1.0] - 2026-10-11
 

@@ -40,7 +40,9 @@ var (
 	updater  *Updater
 	listener net.Listener
 	// true when the agent quits to start again as the version it has just installed
-	restart  atomic.Bool
+	restart atomic.Bool
+	// true from the moment the agent starts quitting
+	leaving  atomic.Bool
 	quitOnce sync.Once
 )
 
@@ -96,9 +98,14 @@ func ready() {
 		return
 	}
 	origins := LoadOrigins(func(origin string) bool {
-		return ask(appName, "Permetti a "+origin+" di usare lo scanner?\n\n"+
+		allowed := ask(appName, "Permetti a "+origin+" di usare lo scanner?\n\n"+
 			"La pagina potrà far partire lo scanner di questo computer e leggere i fogli scansionati.",
 			"Permetti", "Non permettere")
+		if leaving.Load() {
+			// the question was closed by the agent quitting, not by the owner: no answer to keep
+			select {}
+		}
+		return allowed
 	})
 	server := NewServer(session, origins)
 	go func() {
@@ -123,9 +130,20 @@ func ready() {
 	waiting := systray.AddMenuItem("", "")
 	waiting.Disable()
 	waiting.Hide()
-	update := systray.AddMenuItem(updateTitle, "")
-	systray.AddSeparator()
-	forget := systray.AddMenuItem("Dimentica i siti accettati", "")
+	about := systray.AddMenuItem("Informazioni", "")
+	// where the window of Informazioni has no buttons of its own, the two stay in the menu; a
+	// channel left empty is never chosen below
+	update := &updateButton{}
+	var updateClicked, forgetClicked chan struct{}
+	if !windowButtons {
+		update.entry = systray.AddMenuItem("", "")
+		updateClicked = update.entry.ClickedCh
+		systray.AddSeparator()
+		forgetClicked = systray.AddMenuItem(forgetTitle, "").ClickedCh
+	} else {
+		systray.AddSeparator()
+	}
+	update.SetTitle(updateTitle)
 	leave := systray.AddMenuItem("Esci", "")
 
 	updater = NewUpdater(func(version string) {
@@ -141,10 +159,13 @@ func ready() {
 	go func() {
 		for {
 			select {
-			case <-forget.ClickedCh:
+			case <-forgetClicked:
 				origins.Forget()
 				logf("accepted sites forgotten")
-			case <-update.ClickedCh:
+			case <-about.ClickedCh:
+				// in its own thread: the window stays open until a button is clicked
+				go showAbout(about, origins, update, waiting)
+			case <-updateClicked:
 				// in its own thread: the check can take as long as the download
 				go updateNow(update, waiting)
 			case <-idle.C:
@@ -152,28 +173,99 @@ func ready() {
 					continue
 				}
 				logf("no request for %s: quitting", idleTime)
-				systray.Quit()
+				shutdown()
 				return
 			case <-leave.ClickedCh:
-				systray.Quit()
+				shutdown()
 				return
 			case <-stop:
-				systray.Quit()
+				shutdown()
 				return
 			}
 		}
 	}()
 }
 
-// The entry of the menu that looks for a newer version now; once one is downloaded it carries its number.
-const updateTitle = "Cerca aggiornamenti"
+// What the owner clicks to look for a newer version now, and to have every site asked about again.
+const (
+	updateTitle = "Cerca aggiornamenti"
+	forgetTitle = "Dimentica i siti accettati"
+)
 
-// updateNow is the entry of the menu: the check the agent makes by itself, made now, and the new
-// version installed at once instead of when the agent quits. The agent then starts again. The
-// answer is always a window: the owner asked.
-func updateNow(entry, waiting *systray.MenuItem) {
+// updateButton is what the owner clicks to have a newer version now: a button of the window of
+// Informazioni, or an entry of the menu where that window has no buttons. Once a version is
+// downloaded it carries its number.
+type updateButton struct {
+	title atomic.Value      // string
+	entry *systray.MenuItem // nil when the button is in the window
+}
+
+func (b *updateButton) Title() string {
+	return b.title.Load().(string)
+}
+
+func (b *updateButton) SetTitle(title string) {
+	b.title.Store(title)
+	if b.entry != nil {
+		b.entry.SetTitle(title)
+	}
+}
+
+// showAbout is the entry Informazioni of the menu: a window that says what the agent is, which
+// version this one is and which sites the owner answered about. Where the window can carry them
+// it also has the buttons that look for a newer version and forget the sites.
+func showAbout(entry *systray.MenuItem, origins *Origins, update *updateButton, waiting *systray.MenuItem) {
 	entry.Disable()
 	defer entry.Enable()
+	for {
+		allowed, denied := origins.Answers()
+		buttons := []string{"OK"}
+		if windowButtons {
+			buttons = append(buttons, update.Title())
+			if len(allowed)+len(denied) > 0 {
+				buttons = append(buttons, forgetTitle)
+			}
+		}
+		// the button that looks for a newer version leaves the window open: the answer comes in
+		// a window above it
+		place := chooseOpen(appName, aboutText(allowed, denied), buttons, 1, func() string {
+			updateNow(update, waiting)
+			return update.Title()
+		})
+		if place != 2 {
+			return
+		}
+		origins.Forget()
+		logf("accepted sites forgotten")
+		// the window again: the list is now empty
+	}
+}
+
+func aboutText(allowed, denied []string) string {
+	text := "Versione " + Version + "\n\n" +
+		"Comanda lo scanner attaccato a questo computer per conto della pagina Scansiona di Family Manager: " +
+		"fa passare i fogli del caricatore e li dà alla pagina, che li carica.\n\n" +
+		"Risponde solo ai siti che hai accettato. Si chiude da solo dopo dieci minuti senza richieste, " +
+		"e sul computer non lascia nessuna scansione.\n\n"
+	if len(allowed) == 0 {
+		text += "Nessun sito accettato: al primo che chiama, l'agente chiede."
+	} else {
+		text += "Siti accettati:\n" + strings.Join(allowed, "\n")
+	}
+	if len(denied) > 0 {
+		text += "\n\nSiti rifiutati:\n" + strings.Join(denied, "\n")
+	}
+	return text
+}
+
+// updateNow looks for a newer version now: the check the agent makes by itself, and the new
+// version installed at once instead of when the agent quits. The agent then starts again. The
+// answer is always a window: the owner asked.
+func updateNow(button *updateButton, waiting *systray.MenuItem) {
+	if button.entry != nil {
+		button.entry.Disable()
+		defer button.entry.Enable()
+	}
 	found, version, err := updater.Check()
 	switch {
 	case errors.Is(err, errFixed):
@@ -195,12 +287,19 @@ func updateNow(entry, waiting *systray.MenuItem) {
 	}
 	// installed here and not in quit: if it does not get there the agent is still open to say so
 	if _, err := updater.Install(); err != nil {
-		entry.SetTitle(updateTitle)
+		button.SetTitle(updateTitle)
 		waiting.Hide()
 		tell(appName, "Non sono riuscito a installare la versione "+version+".\n\nL'agente resta alla "+Version+". Il motivo è scritto in agent.log.")
 		return
 	}
 	restart.Store(true)
+	shutdown()
+}
+
+// shutdown quits the agent, after closing the windows that are open: see closeWindows.
+func shutdown() {
+	leaving.Store(true)
+	closeWindows()
 	systray.Quit()
 }
 

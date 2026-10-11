@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 )
 
@@ -84,6 +85,22 @@ func (o *Origins) Check(origin string) string {
 		}()
 	}
 	return OriginPending
+}
+
+// Answers lists the sites the owner answered about, each list in alphabetical order.
+func (o *Origins) Answers() (allowed, denied []string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for origin, yes := range o.answers {
+		if yes {
+			allowed = append(allowed, origin)
+		} else {
+			denied = append(denied, origin)
+		}
+	}
+	sort.Strings(allowed)
+	sort.Strings(denied)
+	return allowed, denied
 }
 
 // Forget deletes every answer: each site will be asked about again.

@@ -28,5 +28,13 @@ void fmRunLoop(double seconds);
 int fmAsk(const char *title, const char *text, const char *yes, const char *no);
 // A message with one button.
 void fmTell(const char *title, const char *text);
+// A message with the buttons given, the first being the one of Return: the place of the one
+// clicked, from 0, or -1 when the window was closed without a click. The button at the place
+// stay (-1 for none) leaves the window open: a click turns the buttons off and calls goChooseStay.
+int fmChoose(const char *title, const char *text, const char **buttons, int count, int stay);
+// Turns the buttons of the window of fmChoose on again, and gives this title to the one that stays.
+void fmChooseDone(const char *title);
+// Asks the window on top to close, without a click: 1 when there was one. Callable from any thread.
+int fmCloseWindow(void);
 
 #endif
